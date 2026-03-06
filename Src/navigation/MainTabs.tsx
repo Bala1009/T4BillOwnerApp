@@ -206,8 +206,24 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   );
 }
 
+import { useNavigation, CommonActions } from "@react-navigation/native";
+import { DeviceEventEmitter } from "react-native";
+
 // ─── Main Tabs Navigator ────────────────────────────────────
 export default function MainTabs() {
+  const navigation = useNavigation<any>();
+
+  React.useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener("AUTH_FAILED", () => {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "Login" }],
+      });
+    });
+
+    return () => subscription.remove();
+  }, [navigation]);
+
   return (
     <Tab.Navigator
       tabBar={(props) => <CustomTabBar {...props} />}

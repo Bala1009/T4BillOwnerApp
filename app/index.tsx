@@ -10,6 +10,7 @@ import {
 import { ActivityIndicator, View } from "react-native";
 import AppNavigator from "../Src/navigation/AppNavigator";
 import { ThemeProvider } from "../Src/theme";
+import { AuthProvider } from "../Src/context/AuthContext";
 
 export default function Index() {
   const [fontsLoaded] = useFonts({
@@ -31,7 +32,9 @@ export default function Index() {
 
   return (
     <ThemeProvider>
-      <AppNavigator />
+      <AuthProvider>
+        <AppNavigator />
+      </AuthProvider>
     </ThemeProvider>
   );
 }

@@ -39,7 +39,7 @@ export default function ScreenWrapper({
                     style={styles.flex}
                     contentContainerStyle={[
                         styles.scrollContent,
-                        { paddingHorizontal: wp(paddingH) },
+                        { paddingHorizontal: wp(paddingH), flexGrow: 1 },
                     ]}
                     showsVerticalScrollIndicator={false}
                     keyboardShouldPersistTaps="handled"

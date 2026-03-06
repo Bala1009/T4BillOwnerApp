@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNavigation } from "@react-navigation/native";
 import React, { useEffect } from "react";
 import {
@@ -29,11 +30,24 @@ export default function SplashScreen() {
         logoOpacity.value = withTiming(1, { duration: 800 });
         textOpacity.value = withDelay(400, withTiming(1, { duration: 600 }));
 
+        const checkLoginStatus = async () => {
+            try {
+                const token = await AsyncStorage.getItem('authtoken');
+                navigation.reset({
+                    index: 0,
+                    routes: [{ name: token ? "Main" : "Login" }],
+                });
+            } catch (error) {
+                console.error("Error checking token in splash", error);
+                navigation.reset({
+                    index: 0,
+                    routes: [{ name: "Login" }],
+                });
+            }
+        };
+
         const timer = setTimeout(() => {
-            navigation.reset({
-                index: 0,
-                routes: [{ name: "Login" }],
-            });
+            checkLoginStatus();
         }, 2500);
 
         return () => clearTimeout(timer);
