@@ -31,6 +31,7 @@ export default function Card({
                 {
                     backgroundColor: colors.card,
                     padding: wp(padding),
+                    borderColor: "rgba(0,0,0,0.03)",
                 },
                 noMargin && { marginTop: 0 },
                 style,
@@ -43,12 +44,13 @@ export default function Card({
 
 const styles = StyleSheet.create({
     card: {
-        borderRadius: wp(16),
+        borderRadius: wp(20),
         marginTop: hp(16),
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 10,
-        elevation: 3,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.04,
+        shadowRadius: 24,
+        elevation: 6,
+        borderWidth: 1,
     },
 });

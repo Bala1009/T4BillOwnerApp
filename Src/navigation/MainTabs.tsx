@@ -8,6 +8,11 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Animated, {
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DashboardScreen from "../screens/DashboardScreen";
 import InventoryScreen from "../screens/InventoryScreen";
@@ -25,23 +30,137 @@ const TABS = [
 ] as const;
 
 // ─── Tab Bar Constants ──────────────────────────────────────
-const TAB_BAR_CONTENT_HEIGHT = 56; // Fixed content area (icon + label)
-const TAB_CORNER_RADIUS = 20;
+const TAB_BAR_CONTENT_HEIGHT = 60; // Slightly taller for modern look
+const TAB_CORNER_RADIUS = 24;
 const ICON_SIZE_FEATHER = 22;
 const ICON_SIZE_IONICONS = 24;
 const LABEL_FONT_SIZE = 11;
-const ACTIVE_PILL_WIDTH = 48;
+const ACTIVE_PILL_WIDTH = 56;
 const ACTIVE_PILL_HEIGHT = 32;
 const ACTIVE_PILL_RADIUS = 16;
+
+// ─── Animated Tab Item ──────────────────────────────────────
+function AnimatedTabItem({
+  route,
+  isFocused,
+  onPress,
+  color,
+  tabConfig,
+  colors,
+}: {
+  route: any;
+  isFocused: boolean;
+  onPress: () => void;
+  color: string;
+  tabConfig: (typeof TABS)[number];
+  colors: any;
+}) {
+  const animatedIconStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        {
+          scale: withSpring(isFocused ? 1.15 : 1, {
+            damping: 10,
+            stiffness: 100,
+          }),
+        },
+        {
+          translateY: withSpring(isFocused ? -2 : 0, {
+            damping: 10,
+            stiffness: 100,
+          }),
+        },
+      ],
+    };
+  });
+
+  const animatedPillStyle = useAnimatedStyle(() => {
+    return {
+      opacity: withTiming(isFocused ? 1 : 0, { duration: 250 }),
+      transform: [
+        {
+          scale: withSpring(isFocused ? 1 : 0.4, {
+            damping: 14,
+            stiffness: 120,
+          }),
+        },
+      ],
+    };
+  });
+
+  const animatedLabelStyle = useAnimatedStyle(() => {
+    return {
+      opacity: withTiming(isFocused ? 1 : 0.6, { duration: 200 }),
+      transform: [
+        {
+          translateY: withSpring(isFocused ? 0 : 2, {
+            damping: 10,
+            stiffness: 100,
+          }),
+        },
+      ],
+    };
+  });
+
+  const renderIcon = () => {
+    if (tabConfig.iconType === "ionicons") {
+      return (
+        <Ionicons
+          name={tabConfig.icon as any}
+          size={ms(ICON_SIZE_IONICONS)}
+          color={color}
+        />
+      );
+    }
+    return (
+      <Feather
+        name={tabConfig.icon as any}
+        size={ms(ICON_SIZE_FEATHER)}
+        color={color}
+      />
+    );
+  };
+
+  return (
+    <TouchableOpacity
+      accessibilityRole="button"
+      accessibilityState={isFocused ? { selected: true } : {}}
+      accessibilityLabel={tabConfig.label}
+      onPress={onPress}
+      activeOpacity={0.8}
+      style={styles.tab}
+    >
+      <View style={styles.iconWrapper}>
+        <Animated.View
+          style={[
+            StyleSheet.absoluteFillObject,
+            {
+              backgroundColor: colors.tabActiveBg || colors.primary + "1A", // fallback if tabActiveBg is missing
+              borderRadius: wp(ACTIVE_PILL_RADIUS),
+            },
+            animatedPillStyle,
+          ]}
+        />
+        <Animated.View style={animatedIconStyle}>
+          {renderIcon()}
+        </Animated.View>
+      </View>
+      <Animated.Text
+        style={[styles.label, { color }, animatedLabelStyle]}
+        numberOfLines={1}
+      >
+        {tabConfig.label}
+      </Animated.Text>
+    </TouchableOpacity>
+  );
+}
 
 // ─── Custom Tab Bar ─────────────────────────────────────────
 function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
 
-  // Use actual safe area bottom inset for proper spacing on all devices
-  // Minimum 8px padding even on devices without home indicator
-  const bottomPadding = Math.max(insets.bottom, 8);
+  const bottomPadding = Math.max(insets.bottom, 12);
 
   return (
     <View style={[styles.wrapper, { backgroundColor: colors.tabBg }]}>
@@ -70,52 +189,16 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
             }
           };
 
-          const renderIcon = () => {
-            if (tabConfig.iconType === "ionicons") {
-              return (
-                <Ionicons
-                  name={tabConfig.icon as any}
-                  size={ms(ICON_SIZE_IONICONS)}
-                  color={color}
-                />
-              );
-            }
-            return (
-              <Feather
-                name={tabConfig.icon as any}
-                size={ms(ICON_SIZE_FEATHER)}
-                color={color}
-              />
-            );
-          };
-
           return (
-            <TouchableOpacity
+            <AnimatedTabItem
               key={route.key}
-              accessibilityRole="button"
-              accessibilityState={isFocused ? { selected: true } : {}}
-              accessibilityLabel={tabConfig.label}
+              route={route}
+              isFocused={isFocused}
               onPress={onPress}
-              activeOpacity={0.7}
-              style={styles.tab}
-            >
-              <View
-                style={[
-                  styles.iconContainer,
-                  isFocused && {
-                    backgroundColor: colors.tabActiveBg,
-                  },
-                ]}
-              >
-                {renderIcon()}
-              </View>
-              <Text
-                style={[styles.label, { color }]}
-                numberOfLines={1}
-              >
-                {tabConfig.label}
-              </Text>
-            </TouchableOpacity>
+              color={color}
+              tabConfig={tabConfig as any}
+              colors={colors}
+            />
           );
         })}
       </View>
@@ -141,22 +224,25 @@ export default function MainTabs() {
 // ─── Styles ─────────────────────────────────────────────────
 const styles = StyleSheet.create({
   wrapper: {
-    // This fills the area behind the rounded corners
-    // so there's no gap on the sides
+    shadowColor: "#1A237E",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 16,
+    borderTopLeftRadius: wp(TAB_CORNER_RADIUS),
+    borderTopRightRadius: wp(TAB_CORNER_RADIUS),
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
   },
   container: {
     flexDirection: "row",
     alignItems: "center",
     borderTopLeftRadius: wp(TAB_CORNER_RADIUS),
     borderTopRightRadius: wp(TAB_CORNER_RADIUS),
-    paddingTop: 10,
-    paddingHorizontal: wp(4),
-    // Shadow
-    shadowColor: "#1A237E",
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 16,
-    elevation: 12,
+    paddingTop: 12,
+    paddingHorizontal: wp(2),
   },
   tab: {
     flex: 1,
@@ -164,13 +250,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     minHeight: TAB_BAR_CONTENT_HEIGHT,
   },
-  iconContainer: {
+  iconWrapper: {
     width: wp(ACTIVE_PILL_WIDTH),
     height: ACTIVE_PILL_HEIGHT,
-    borderRadius: wp(ACTIVE_PILL_RADIUS),
-    justifyContent: "center",
     alignItems: "center",
-    marginBottom: 4,
+    justifyContent: "center",
+    marginBottom: 6,
   },
   label: {
     fontSize: ms(LABEL_FONT_SIZE),
