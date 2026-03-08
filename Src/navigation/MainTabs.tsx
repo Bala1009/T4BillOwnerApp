@@ -241,10 +241,10 @@ export default function MainTabs() {
 const styles = StyleSheet.create({
   wrapper: {
     shadowColor: "#1A237E",
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 16,
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.02,
+    shadowRadius: 8,
+    elevation: 4,
     borderTopLeftRadius: wp(TAB_CORNER_RADIUS),
     borderTopRightRadius: wp(TAB_CORNER_RADIUS),
     position: 'absolute',

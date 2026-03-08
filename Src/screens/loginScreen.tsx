@@ -1,4 +1,3 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Feather } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import React, { useEffect, useState } from "react";
@@ -8,6 +7,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -15,18 +15,20 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
-  ScrollView,
+  Image,
 } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
   withTiming,
+  withDelay,
+  withRepeat,
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { loginUser } from "../api/authApi";
-import { hp, ms, useTheme, wp } from "../theme";
 import { useAuth } from "../context/AuthContext";
+import { hp, ms, useTheme, wp } from "../theme";
 
 export default function LoginScreen() {
   const navigation = useNavigation<any>();
@@ -44,7 +46,23 @@ export default function LoginScreen() {
   const successScale = useSharedValue(0.5);
   const successOpacity = useSharedValue(0);
 
+  // Entrance animations
+  const fadeUpValue = useSharedValue(50);
+  const fadeOpacity = useSharedValue(0);
+
+  // Floating background blobs
+  const blob1Y = useSharedValue(0);
+  const blob2Y = useSharedValue(0);
+
   useEffect(() => {
+    // Trigger entrance animation
+    fadeUpValue.value = withTiming(0, { duration: 800 });
+    fadeOpacity.value = withTiming(1, { duration: 800 });
+
+    // Floating background animations
+    blob1Y.value = withRepeat(withTiming(-20, { duration: 3000 }), -1, true);
+    blob2Y.value = withDelay(1000, withRepeat(withTiming(20, { duration: 3500 }), -1, true));
+
     if (isSuccess) {
       successScale.value = withSpring(1, { damping: 12 });
       successOpacity.value = withTiming(1, { duration: 500 });
@@ -54,6 +72,19 @@ export default function LoginScreen() {
   const successAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: successScale.value }],
     opacity: successOpacity.value,
+  }));
+
+  const formAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: fadeOpacity.value,
+    transform: [{ translateY: fadeUpValue.value }],
+  }));
+
+  const blob1Style = useAnimatedStyle(() => ({
+    transform: [{ translateY: blob1Y.value }],
+  }));
+
+  const blob2Style = useAnimatedStyle(() => ({
+    transform: [{ translateY: blob2Y.value }],
   }));
 
   const validateUserName = (text: string) => {
@@ -99,7 +130,7 @@ export default function LoginScreen() {
         await setAuthData({
           authtoken: token || null,
           ClientID: clientID,
-          userDetails: res.data || null,
+          userDetails: res.data ? { ...res.data, loginUserName: userName } : { loginUserName: userName },
         });
 
         // Only success if API confirms login
@@ -182,8 +213,18 @@ export default function LoginScreen() {
           showsVerticalScrollIndicator={false}
         >
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <View style={[styles.inner, { backgroundColor: colors.bg }]}>
-              <View style={styles.header}>
+            <View style={[styles.inner, { backgroundColor: colors.bg, overflow: 'hidden' }]}>
+              
+              {/* Creative Animated Background Blobs */}
+              <Animated.View style={[styles.blob1, { backgroundColor: colors.primary + '15' }, blob1Style]} />
+              <Animated.View style={[styles.blob2, { backgroundColor: colors.blue + '15' }, blob2Style]} />
+
+              <Animated.View style={[styles.header, formAnimatedStyle]}>
+                <Image
+                  source={require("../assets/images/app-icon.png")}
+                  style={styles.logo}
+                  resizeMode="contain"
+                />
                 <Text style={[styles.title, { color: colors.textPrimary }]}>
                   Welcome Back
                 </Text>
@@ -192,9 +233,9 @@ export default function LoginScreen() {
                 >
                   Login to continue
                 </Text>
-              </View>
+              </Animated.View>
 
-              <View style={styles.formContainer}>
+              <Animated.View style={[styles.formContainer, formAnimatedStyle]}>
                 {/* Username Field */}
                 <View style={styles.inputWrapper}>
                   <Text
@@ -324,7 +365,7 @@ export default function LoginScreen() {
                     <Text style={styles.loginButtonText}>Login</Text>
                   )}
                 </TouchableOpacity>
-              </View>
+              </Animated.View>
             </View>
           </TouchableWithoutFeedback>
         </ScrollView>
@@ -348,6 +389,13 @@ const styles = StyleSheet.create({
   header: {
     marginBottom: hp(40),
     marginTop: hp(60),
+    alignItems: "flex-start",
+  },
+  logo: {
+    width: wp(64),
+    height: wp(64),
+    marginBottom: hp(24),
+    borderRadius: wp(16),
   },
   title: {
     fontSize: ms(32),
@@ -376,10 +424,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: wp(16),
     height: hp(56),
     shadowColor: "#64748B",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.02,
+    shadowRadius: 2,
+    elevation: 1,
   },
   inputIcon: {
     marginRight: wp(12),
@@ -411,10 +459,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#2563EB",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   loginButtonDisabled: {
     opacity: 0.6,
@@ -438,10 +486,10 @@ const styles = StyleSheet.create({
     borderRadius: wp(24),
     alignItems: "center",
     shadowColor: "#64748B",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.08,
-    shadowRadius: 20,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 8,
+    elevation: 2,
   },
   checkCircle: {
     width: wp(80),
@@ -474,5 +522,21 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: ms(16),
     fontWeight: "bold",
+  },
+  blob1: {
+    position: 'absolute',
+    top: hp(-50),
+    right: wp(-50),
+    width: wp(200),
+    height: wp(200),
+    borderRadius: wp(100),
+  },
+  blob2: {
+    position: 'absolute',
+    bottom: hp(100),
+    left: wp(-80),
+    width: wp(160),
+    height: wp(160),
+    borderRadius: wp(80),
   },
 });

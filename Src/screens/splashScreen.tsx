@@ -13,6 +13,7 @@ import Animated, {
     useSharedValue,
     withDelay,
     withTiming,
+    withRepeat,
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { hp, ms, useTheme, wp } from "../theme";
@@ -24,11 +25,30 @@ export default function SplashScreen() {
     const logoScale = useSharedValue(0.3);
     const logoOpacity = useSharedValue(0);
     const textOpacity = useSharedValue(0);
+    
+    // Analytics bouncing bars
+    const bar1 = useSharedValue(0.2);
+    const bar2 = useSharedValue(0.2);
+    const bar3 = useSharedValue(0.2);
+    const bar4 = useSharedValue(0.2);
 
     useEffect(() => {
         logoScale.value = withTiming(1, { duration: 800 });
         logoOpacity.value = withTiming(1, { duration: 800 });
         textOpacity.value = withDelay(400, withTiming(1, { duration: 600 }));
+
+        // Start chart animations
+        const animateBar = (bar: any, delay: number) => {
+            bar.value = withDelay(
+                delay,
+                withRepeat(withTiming(1, { duration: 500 }), -1, true)
+            );
+        };
+
+        animateBar(bar1, 0);
+        animateBar(bar2, 150);
+        animateBar(bar3, 300);
+        animateBar(bar4, 450);
 
         const checkLoginStatus = async () => {
             try {
@@ -68,7 +88,7 @@ export default function SplashScreen() {
             <View style={[styles.container, { backgroundColor: colors.splashBg }]}>
                 <Animated.View style={[styles.logoContainer, { backgroundColor: colors.splashCard }, logoAnimatedStyle]}>
                     <Image
-                        source={require("../../assets/images/splash-icon.png")}
+                        source={require("../assets/images/app-icon.png")}
                         style={styles.logo}
                         resizeMode="contain"
                     />
@@ -77,6 +97,14 @@ export default function SplashScreen() {
                 <Animated.View style={[styles.textContainer, textAnimatedStyle]}>
                     <Text style={[styles.appName, { color: colors.splashText }]}>T4Bill</Text>
                     <Text style={[styles.tagline, { color: colors.splashSubtext }]}>Owner App</Text>
+                    
+                    {/* Analytics Animated Graph */}
+                    <View style={styles.chartContainer}>
+                        <Animated.View style={[styles.bar, { backgroundColor: '#3B82F6', transform: [{ scaleY: bar1 }] }]} />
+                        <Animated.View style={[styles.bar, { backgroundColor: '#8B5CF6', transform: [{ scaleY: bar2 }] }]} />
+                        <Animated.View style={[styles.bar, { backgroundColor: '#10B981', transform: [{ scaleY: bar3 }] }]} />
+                        <Animated.View style={[styles.bar, { backgroundColor: '#F59E0B', transform: [{ scaleY: bar4 }] }]} />
+                    </View>
                 </Animated.View>
 
                 <Animated.View style={[styles.footer, textAnimatedStyle]}>
@@ -135,5 +163,18 @@ const styles = StyleSheet.create({
     footerText: {
         fontSize: ms(13),
         letterSpacing: 0.5,
+    },
+    chartContainer: {
+        flexDirection: "row",
+        alignItems: "flex-end",
+        justifyContent: "center",
+        height: hp(32),
+        marginTop: hp(24),
+        gap: wp(8),
+    },
+    bar: {
+        width: wp(6),
+        height: "100%",
+        borderRadius: wp(3),
     },
 });

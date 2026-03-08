@@ -9,7 +9,7 @@ const axiosInstance = axios.create({
     headers: {
         'Content-Type': 'application/json',
     },
-    timeout: 10000,
+    timeout: 30000, // Increased timeout to prevent Network Error on slow queries
 });
 
 // Request interceptor
@@ -35,9 +35,19 @@ axiosInstance.interceptors.request.use(
 
 // Response interceptor
 axiosInstance.interceptors.response.use(
-  (response) => response,
-
+  (response) => {
+    // Optional: console.log(`[Axios] Response from ${response.config.url}`, response.status);
+    return response;
+  },
   async (error) => {
+    // Enhanced error logging for network errors
+    if (error.isAxiosError) {
+      console.error(`[Axios Error] API: ${error.config?.url} | message: ${error.message} | code: ${error.code}`);
+      if (!error.response) {
+         console.error("[Axios Error] Server unreachable or request timed out (Network Error).");
+      }
+    }
+
     if (error.response && error.response.status === 401) {
       try {
 

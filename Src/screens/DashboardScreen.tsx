@@ -11,7 +11,9 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
+  DeviceEventEmitter,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -36,193 +38,10 @@ import type { ThemeColors } from "../theme";
 import { hp, ms, useTheme, wp } from "../theme";
 import axiosInstance from "../api/axiosInstance";
 import { getBranchMaster } from "../api/branchService";
+import { getSalesDetails } from "../api/dashboardService";
 import { useAuth } from "../context/AuthContext";
 
-// ─── Dummy Data ─────────────────────────────────────────────
-const KPI_DATA = [
-  {
-    title: "Revenue",
-    value: "₹43,738",
-    change: "+12%",
-    up: true,
-    icon: "trending-up" as const,
-    colorKey: "green" as const,
-    bgKey: "greenBg" as const,
-    sparkline: [30, 45, 28, 60, 52, 75, 68],
-  },
-  {
-    title: "Orders",
-    value: "150",
-    change: "+8%",
-    up: true,
-    icon: "shopping-bag" as const,
-    colorKey: "blue" as const,
-    bgKey: "blueBg" as const,
-    sparkline: [20, 35, 45, 40, 55, 50, 62],
-  },
-  {
-    title: "Expenses",
-    value: "₹12,450",
-    change: "+3%",
-    up: false,
-    icon: "credit-card" as const,
-    colorKey: "red" as const,
-    bgKey: "redBg" as const,
-    sparkline: [40, 38, 42, 45, 43, 48, 46],
-  },
-  {
-    title: "Profit",
-    value: "₹31,288",
-    change: "+18%",
-    up: true,
-    icon: "dollar-sign" as const,
-    colorKey: "orange" as const,
-    bgKey: "orangeBg" as const,
-    sparkline: [25, 40, 35, 55, 48, 70, 65],
-  },
-];
-
-const WEEKLY_CHART_DATA = [
-  { label: "Mon", value: 4200 },
-  { label: "Tue", value: 3100 },
-  { label: "Wed", value: 5800 },
-  { label: "Thu", value: 3900 },
-  { label: "Fri", value: 6500 },
-  { label: "Sat", value: 7200 },
-  { label: "Sun", value: 5000 },
-];
-
-const MONTHLY_CHART_DATA = [
-  { label: "Wk 1", value: 28500 },
-  { label: "Wk 2", value: 32100 },
-  { label: "Wk 3", value: 26800 },
-  { label: "Wk 4", value: 35800 },
-];
-
-const CHART_SUMMARY = {
-  week: { total: "₹35,800", change: "+14.5%", up: true },
-  month: { total: "₹1,23,200", change: "+9.2%", up: true },
-} as const;
-
-const PAYMENT_DATA = [
-  { label: "Cash", amount: "₹18,230", pct: 0.42, colorKey: "green" as const },
-  { label: "Card", amount: "₹14,120", pct: 0.32, colorKey: "blue" as const },
-  { label: "Wallet", amount: "₹8,388", pct: 0.19, colorKey: "purple" as const },
-  { label: "Due", amount: "₹3,000", pct: 0.07, colorKey: "red" as const },
-];
-
-const ORDER_TYPES = [
-  {
-    label: "Dine In",
-    orders: 78,
-    sales: "₹22,400",
-    pct: 52,
-    icon: "restaurant-outline" as const,
-    colorKey: "primary" as const,
-  },
-  {
-    label: "Takeaway",
-    orders: 45,
-    sales: "₹13,100",
-    pct: 30,
-    icon: "bag-handle-outline" as const,
-    colorKey: "orange" as const,
-  },
-  {
-    label: "Delivery",
-    orders: 27,
-    sales: "₹8,238",
-    pct: 18,
-    icon: "bicycle-outline" as const,
-    colorKey: "teal" as const,
-  },
-];
-
-const LEAKAGE_DATA = [
-  { label: "Bills Modified", value: "5", icon: "file-document-edit-outline" },
-  { label: "Bills Reprinted", value: "3", icon: "printer-outline" },
-  { label: "Waived Off", value: "₹820", icon: "cash-remove" },
-  { label: "Cancelled KOTs", value: "7", icon: "close-circle-outline" },
-  { label: "Modified KOTs", value: "4", icon: "pencil-circle-outline" },
-  { label: "KOTs Unused", value: "2", icon: "alert-circle-outline" },
-];
-
-const EXPENSE_DATA = [
-  {
-    label: "Staff Salary",
-    amount: "₹6,500",
-    pct: 0.52,
-    colorKey: "primary" as const,
-  },
-  { label: "Diesel", amount: "₹2,200", pct: 0.18, colorKey: "orange" as const },
-  {
-    label: "Maintenance",
-    amount: "₹1,800",
-    pct: 0.14,
-    colorKey: "teal" as const,
-  },
-  {
-    label: "Other",
-    amount: "₹1,950",
-    pct: 0.16,
-    colorKey: "textTertiary" as const,
-  },
-];
-
-const TOP_ITEMS = [
-  { name: "Chicken Biryani", qty: 120, revenue: "₹8,400", pct: 0.85 },
-  { name: "Paneer Butter Masala", qty: 95, revenue: "₹6,120", pct: 0.72 },
-  { name: "Masala Dosa", qty: 80, revenue: "₹5,200", pct: 0.65 },
-  { name: "Veg Fried Rice", qty: 60, revenue: "₹3,800", pct: 0.48 },
-  { name: "Gulab Jamun", qty: 40, revenue: "₹2,100", pct: 0.3 },
-];
-
-const TOP_BY_SALES = [
-  {
-    name: "Chicken Biryani",
-    primary: "₹8,400",
-    secondary: "120 qty",
-    pct: 1.0,
-  },
-  {
-    name: "Paneer Butter Masala",
-    primary: "₹6,120",
-    secondary: "95 qty",
-    pct: 0.73,
-  },
-  { name: "Masala Dosa", primary: "₹5,200", secondary: "80 qty", pct: 0.62 },
-  { name: "Butter Chicken", primary: "₹4,800", secondary: "64 qty", pct: 0.57 },
-  { name: "Veg Fried Rice", primary: "₹3,800", secondary: "60 qty", pct: 0.45 },
-];
-
-const TOP_BY_QTY = [
-  { name: "Chicken Biryani", primary: "120", secondary: "₹8,400", pct: 1.0 },
-  {
-    name: "Paneer Butter Masala",
-    primary: "95",
-    secondary: "₹6,120",
-    pct: 0.79,
-  },
-  { name: "Masala Dosa", primary: "80", secondary: "₹5,200", pct: 0.67 },
-  { name: "Butter Chicken", primary: "64", secondary: "₹4,800", pct: 0.53 },
-  { name: "Veg Fried Rice", primary: "60", secondary: "₹3,800", pct: 0.5 },
-];
-
-const LOW_BY_SALES = [
-  { name: "Ice Cream Sundae", primary: "₹420", secondary: "6 qty", pct: 0.12 },
-  { name: "Mineral Water", primary: "₹580", secondary: "29 qty", pct: 0.16 },
-  { name: "Bread Butter", primary: "₹640", secondary: "16 qty", pct: 0.18 },
-  { name: "Plain Rice", primary: "₹720", secondary: "24 qty", pct: 0.2 },
-  { name: "Raita", primary: "₹850", secondary: "34 qty", pct: 0.24 },
-];
-
-const LOW_BY_QTY = [
-  { name: "Prawn Curry", primary: "3", secondary: "₹540", pct: 0.06 },
-  { name: "Ice Cream Sundae", primary: "6", secondary: "₹420", pct: 0.12 },
-  { name: "Fish Fry", primary: "8", secondary: "₹960", pct: 0.16 },
-  { name: "Mushroom Soup", primary: "10", secondary: "₹650", pct: 0.2 },
-  { name: "Bread Butter", primary: "16", secondary: "₹640", pct: 0.32 },
-];
+// ─── Dummy Data Removed ─────────────────────────────────────
 
 // ─── SVG Helpers ────────────────────────────────────────────
 
@@ -261,21 +80,105 @@ function buildAreaPath(
 
 // ─── Main Dashboard ─────────────────────────────────────────
 export default function DashboardScreen() {
+  const { authData } = useAuth();
+  const { colors } = useTheme();
+  
   const now = new Date();
   const [dateRange, setDateRange] = useState<DateRange>({
     start: new Date(now.getFullYear(), now.getMonth(), 1),
     end: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
   });
   const [activeFilter, setActiveFilter] = useState<QuickFilter>("this_month");
+  const [selectedBranch, setSelectedBranch] = useState<any | null>(null);
+  const [dashboardData, setDashboardData] = useState<any | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const fetchDashboardData = useCallback(async () => {
+    if (!authData?.ClientID || !selectedBranch) return;
+
+    const formatAsYMD = (date: Date) => {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    };
+
+    const branchIdNum = 
+      selectedBranch?.BranchID ||
+      selectedBranch?.branchID ||
+      selectedBranch?.BranchId ||
+      selectedBranch?.branchId ||
+      selectedBranch?.id ||
+      selectedBranch?.ID ||
+      0;
+
+    const vendorIdNum =
+      selectedBranch?.VendorID ||
+      selectedBranch?.vendorID ||
+      selectedBranch?.VendorId ||
+      selectedBranch?.vendorId ||
+      0;
+      
+    const isActive = 
+      selectedBranch?.IsActive || selectedBranch?.isActive ? true : false;
+
+    const phaseValue = selectedBranch?.Phase || selectedBranch?.phase || null;
+
+    const payload: any = {
+      startDate: formatAsYMD(dateRange.start),
+      endDate: formatAsYMD(dateRange.end),
+      branchID: branchIdNum,
+      clientID: Number(authData?.ClientID)
+    };
+    
+    if (phaseValue !== null && phaseValue !== "") payload.phase = phaseValue;
+    if (isActive) payload.isActive = isActive;
+    if (vendorIdNum) payload.vendorID = vendorIdNum;
+
+    console.log("[DashboardScreen] Request Payload:", JSON.stringify(payload, null, 2));
+
+    try {
+      setIsLoading(true);
+      setErrorMsg(null);
+      const dbData = await getSalesDetails(payload);
+      console.log("[DashboardScreen] Dashboard Data received:", JSON.stringify(dbData, null, 2));
+      setDashboardData(dbData);
+    } catch (error: any) {
+      console.error("[DashboardScreen] Fetch Data Error:", error);
+      setErrorMsg("Failed to load dashboard data. Please check your network connection and try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [dateRange, selectedBranch, authData?.ClientID]);
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [fetchDashboardData]);
 
   const handleDateRangeChange = useCallback(
     (range: DateRange, filter: QuickFilter) => {
       setDateRange(range);
       setActiveFilter(filter);
-      // TODO: Fetch data for the new range
     },
     [],
   );
+
+  // Ensure arrays are typed consistently for ItemRankingSection
+  const itemWiseSales = dashboardData?.dashBoardItemWiseSalesList || [];
+  
+  const mapItemToList = (items: any[], isQtyFirst: boolean) => 
+    items.map((it: any) => ({
+      name: it.productDescription || "Unknown",
+      primary: isQtyFirst ? `${it.count}` : `₹${it.totalPrice?.toLocaleString() || 0}`,
+      secondary: isQtyFirst ? `₹${it.totalPrice?.toLocaleString() || 0}` : `${it.count} qty`,
+      pct: items.length > 0 && items[0] ? (isQtyFirst ? (it.count / Math.max(items[0].count, 1)) : (it.totalPrice / Math.max(items[0].totalPrice, 1))) : 0,
+    }));
+
+  const topBySalesRaw = [...itemWiseSales].sort((a, b) => (b.totalPrice || 0) - (a.totalPrice || 0));
+  const topByQtyRaw = [...itemWiseSales].sort((a, b) => (b.count || 0) - (a.count || 0));
+  const lowBySalesRaw = [...itemWiseSales].sort((a, b) => (a.totalPrice || 0) - (b.totalPrice || 0));
+  const lowByQtyRaw = [...itemWiseSales].sort((a, b) => (a.count || 0) - (b.count || 0));
 
   return (
     <ScreenWrapper scrollable>
@@ -283,52 +186,77 @@ export default function DashboardScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: hp(40) }}
       >
-        <Header />
+        <Header onBranchSelected={setSelectedBranch} />
         <Greeting />
         <CalendarPicker
           dateRange={dateRange}
           activeFilter={activeFilter}
           onDateRangeChange={handleDateRangeChange}
         />
-        <KPIGrid />
-        <SalesChartSection />
-        <PaymentDonutSection />
-        <OrderTypeSection />
-        <RevenueLeakage />
-        <ExpensesSection />
-        <TopSellingSection />
-        <ItemRankingSection
-          title="Top Items by Sales"
-          icon="trending-up"
-          accentColor="green"
-          data={TOP_BY_SALES}
-          primaryLabel="Revenue"
-          secondaryLabel="Qty"
-        />
-        <ItemRankingSection
-          title="Top Items by Quantity"
-          icon="bar-chart-2"
-          accentColor="blue"
-          data={TOP_BY_QTY}
-          primaryLabel="Qty Sold"
-          secondaryLabel="Revenue"
-        />
-        <ItemRankingSection
-          title="Low Sales by Amount"
-          icon="trending-down"
-          accentColor="red"
-          data={LOW_BY_SALES}
-          primaryLabel="Revenue"
-          secondaryLabel="Qty"
-        />
-        <ItemRankingSection
-          title="Low Sales by Quantity"
-          icon="alert-triangle"
-          accentColor="orange"
-          data={LOW_BY_QTY}
-          primaryLabel="Qty Sold"
-          secondaryLabel="Revenue"
-        />
+        {isLoading ? (
+          <View style={{ padding: hp(40), alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={{ marginTop: hp(12), color: colors.textSecondary }}>Fetching dashboard data...</Text>
+          </View>
+        ) : errorMsg ? (
+          <View style={{ padding: hp(40), alignItems: 'center' }}>
+            <Feather name="alert-circle" size={ms(48)} color={colors.red} style={{ marginBottom: hp(16) }} />
+            <Text style={{ textAlign: 'center', color: colors.textPrimary, fontSize: ms(16), marginBottom: hp(24) }}>
+              {errorMsg}
+            </Text>
+            <TouchableOpacity 
+              style={{ backgroundColor: colors.primary, paddingHorizontal: wp(24), paddingVertical: hp(12), borderRadius: ms(8) }}
+              onPress={fetchDashboardData}
+            >
+              <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : dashboardData ? (
+          <>
+            <KPIGrid data={dashboardData.dashBoardCount} />
+            <SalesChartSection 
+              salesData={dashboardData.dashBoardSalesList} 
+              hourlyData={dashboardData.dashBoardHourlyList} 
+            />
+            <PaymentDonutSection data={dashboardData.paymentSplitupList} />
+            <RevenueLeakage data={dashboardData.dashBoardCount} />
+            <TaxSummarySection data={dashboardData.dashBoardTaxList} />
+            <ExpensesSection data={dashboardData.expensessDashBoardList} />
+            <TopSellingSection data={topBySalesRaw} />
+            <ItemRankingSection
+              title="Top Items by Sales"
+              icon="trending-up"
+              accentColor="green"
+              data={mapItemToList(topBySalesRaw, false)}
+              primaryLabel="Revenue"
+              secondaryLabel="Qty"
+            />
+            <ItemRankingSection
+              title="Top Items by Quantity"
+              icon="bar-chart-2"
+              accentColor="blue"
+              data={mapItemToList(topByQtyRaw, true)}
+              primaryLabel="Qty Sold"
+              secondaryLabel="Revenue"
+            />
+            <ItemRankingSection
+              title="Low Sales by Amount"
+              icon="trending-down"
+              accentColor="red"
+              data={mapItemToList(lowBySalesRaw, false)}
+              primaryLabel="Revenue"
+              secondaryLabel="Qty"
+            />
+            <ItemRankingSection
+              title="Low Sales by Quantity"
+              icon="alert-triangle"
+              accentColor="orange"
+              data={mapItemToList(lowByQtyRaw, true)}
+              primaryLabel="Qty Sold"
+              secondaryLabel="Revenue"
+            />
+          </>
+        ) : null}
         <View style={{ height: hp(32) }} />
       </ScrollView>
     </ScreenWrapper>
@@ -336,7 +264,7 @@ export default function DashboardScreen() {
 }
 
 // ─── Header ─────────────────────────────────────────────────
-function Header() {
+function Header({ onBranchSelected }: { onBranchSelected?: (branch: any) => void }) {
   const { colors } = useTheme();
   const { authData } = useAuth();
   const [branches, setBranches] = useState<any[]>([]);
@@ -371,6 +299,9 @@ function Header() {
 
       if (branchList.length > 0) {
         setSelectedBranch(branchList[0]);
+        if (onBranchSelected) onBranchSelected(branchList[0]);
+        await AsyncStorage.setItem('selectedBranch', JSON.stringify(branchList[0]));
+        DeviceEventEmitter.emit('BRANCH_CHANGED', branchList[0]);
       }
     } catch (error) {
       console.error("[Dashboard] Error fetching branches:", error);
@@ -379,9 +310,12 @@ function Header() {
     }
   };
 
-  const handleBranchSelect = (branch: any) => {
+  const handleBranchSelect = async (branch: any) => {
     console.log("[Dashboard] Selected branch:", branch);
     setSelectedBranch(branch);
+    if (onBranchSelected) onBranchSelected(branch);
+    await AsyncStorage.setItem('selectedBranch', JSON.stringify(branch));
+    DeviceEventEmitter.emit('BRANCH_CHANGED', branch);
     setDropdownVisible(false);
   };
 
@@ -464,14 +398,18 @@ function Header() {
                   <FlatList
                     data={branches}
                     keyExtractor={(item, index) =>
-                      item?.id?.toString() ||
+                      item?.BranchID?.toString() ||
+                      item?.branchID?.toString() ||
                       item?.BranchId?.toString() ||
                       item?.branchId?.toString() ||
+                      item?.id?.toString() ||
                       index.toString()
                     }
                     showsVerticalScrollIndicator={false}
                     renderItem={({ item }) => {
                       const isSelected =
+                        (selectedBranch?.BranchID && item?.BranchID && selectedBranch.BranchID === item.BranchID) ||
+                        (selectedBranch?.branchID && item?.branchID && selectedBranch.branchID === item.branchID) ||
                         (selectedBranch?.BranchId && item?.BranchId && selectedBranch.BranchId === item.BranchId) ||
                         (selectedBranch?.branchId && item?.branchId && selectedBranch.branchId === item.branchId) ||
                         (selectedBranch?.id && item?.id && selectedBranch.id === item.id) ||
@@ -525,10 +463,37 @@ function Header() {
 // ─── Greeting ───────────────────────────────────────────────
 function Greeting() {
   const { colors } = useTheme();
+  const { authData } = useAuth();
+
+  const getGreetingMessage = () => {
+    const currentHour = new Date().getHours();
+    if (currentHour >= 5 && currentHour < 12) {
+      return 'Good Morning';
+    } else if (currentHour >= 12 && currentHour < 17) {
+      return 'Good Afternoon';
+    } else if (currentHour >= 17 && currentHour < 22) {
+      return 'Good Evening';
+    } else {
+      return 'Good Night';
+    }
+  };
+
+  const getFirstName = () => {
+    const userDetails = authData?.userDetails || {};
+    // Check login API response for userName or name. If not available, fallback to username entered during login
+    const mappedName = userDetails?.userName || userDetails?.name || userDetails?.loginUserName || "";
+    
+    // Ensure the value is not empty before displaying
+    if (!mappedName) return "User";
+    
+    // Capitalize the first letter just in case it's completely lowercase (optional but nice)
+    return mappedName.charAt(0).toUpperCase() + mappedName.slice(1);
+  };
+
   return (
     <View style={s.greetingContainer}>
       <Text style={[s.greetingTitle, { color: colors.textPrimary }]}>
-        Good Morning, Bala
+        {getGreetingMessage()}, {getFirstName()}
       </Text>
       <Text style={[s.greetingSubtitle, { color: colors.textSecondary }]}>
         Here your business overview today
@@ -574,11 +539,22 @@ function SparklineMini({
   );
 }
 
+type KPIDataType = {
+  title: string;
+  value: string;
+  change: string;
+  up: boolean;
+  icon: "trending-up" | "shopping-bag" | "credit-card" | "dollar-sign" | "arrow-up-right" | "arrow-down-right";
+  colorKey: "green" | "blue" | "red" | "orange";
+  bgKey: "greenBg" | "blueBg" | "redBg" | "orangeBg";
+  sparkline: number[];
+};
+
 function AnimatedKPICard({
   item,
   colors,
 }: {
-  item: (typeof KPI_DATA)[0];
+  item: KPIDataType;
   colors: any;
 }) {
   const scale = useSharedValue(1);
@@ -662,29 +638,124 @@ function AnimatedKPICard({
   );
 }
 
-function KPIGrid() {
+function KPIGrid({ data }: { data: any }) {
   const { colors } = useTheme();
+
+  if (!data) return null;
+
+  const profit = (data.todaysPayments || 0) - (data.todayExpenses || 0);
+
+  const mappedData = [
+    {
+      title: "Revenue",
+      value: `₹${(data.todaysPayments || 0).toLocaleString()}`,
+      change: "--",
+      up: true,
+      icon: "trending-up" as const,
+      colorKey: "green" as const,
+      bgKey: "greenBg" as const,
+      sparkline: [10, 10, 10], // Flat sparkline when data lacks it
+    },
+    {
+      title: "Bills",
+      value: `${data.totalBills || 0}`,
+      change: "--",
+      up: true,
+      icon: "shopping-bag" as const,
+      colorKey: "blue" as const,
+      bgKey: "blueBg" as const,
+      sparkline: [10, 10, 10],
+    },
+    {
+      title: "Expenses",
+      value: `₹${(data.todayExpenses || 0).toLocaleString()}`,
+      change: "--",
+      up: false,
+      icon: "credit-card" as const,
+      colorKey: "red" as const,
+      bgKey: "redBg" as const,
+      sparkline: [10, 10, 10],
+    },
+    {
+      title: "Profit",
+      value: `₹${profit.toLocaleString()}`,
+      change: "--",
+      up: profit >= 0,
+      icon: "dollar-sign" as const,
+      colorKey: "orange" as const,
+      bgKey: "orangeBg" as const,
+      sparkline: [10, 10, 10],
+    },
+  ];
 
   return (
     <View style={s.kpiGrid}>
-      {KPI_DATA.map((item, i) => (
+      {mappedData.map((item, i) => (
         <AnimatedKPICard key={i} item={item as any} colors={colors} />
       ))}
     </View>
   );
 }
 
-// ─── Sales Chart (Premium Bar Chart) ────────────────────────
-type ChartPeriod = "week" | "month";
+// ─── Payment Pie Chart (Modern) ────────────────────────────
 
-function SalesChartSection() {
+function SalesChartSection({ salesData, hourlyData }: { salesData: any[], hourlyData: any[] }) {
   const { colors } = useTheme();
-  const [period, setPeriod] = useState<ChartPeriod>("week");
+  const [period, setPeriod] = useState<"sales" | "hourly">("sales");
   const [areaWidth, setAreaWidth] = useState(0);
 
-  const chartData = period === "week" ? WEEKLY_CHART_DATA : MONTHLY_CHART_DATA;
-  const summary = CHART_SUMMARY[period];
-  const maxVal = Math.max(...chartData.map((d) => d.value));
+  const formatXLabel = (val: string, currentPeriod: "sales" | "hourly") => {
+    if (!val) return "-";
+    const str = val.toString();
+    
+    if (currentPeriod === "hourly") {
+      // Backend typically returns hours like "14", "14:00", etc. Let's make it 12H am/pm format if possible
+      const numMatch = str.match(/^(\d+)/);
+      if (numMatch) {
+        const num = parseInt(numMatch[1], 10);
+        if (!isNaN(num) && num >= 0 && num <= 24) {
+          const ampm = num >= 12 && num < 24 ? "PM" : "AM";
+          const h = num % 12 || 12;
+          return `${h} ${ampm}`;
+        }
+      }
+      return str; 
+    }
+    
+    // Replace API shorthand strings with their full descriptive names
+    const orderTypesMap: Record<string, string> = {
+      ret: "Retail", can: "Cancelled", com: "Complimentary", tot: "Total"
+    };
+
+    const lowerStr = str.toLowerCase().trim();
+    if (orderTypesMap[lowerStr]) return orderTypesMap[lowerStr];
+
+    // For 'sales' period, ensure we use standard abbreviations (Mon, Tue, Wed) cleanly
+    const daysMap: Record<string, string> = {
+      sunday: "Sun", monday: "Mon", tuesday: "Tue", wednesday: "Wed",
+      thursday: "Thu", friday: "Fri", saturday: "Sat"
+    };
+
+    if (daysMap[lowerStr]) return daysMap[lowerStr];
+    
+    // Return full string so descriptive types like "Retail" don't get truncated
+    return str;
+  };
+
+  const activeData = period === "sales" ? (salesData || []) : (hourlyData || []);
+  const chartData = activeData.length > 0 
+    ? activeData.map((d: any) => ({
+        label: formatXLabel(d.hours, period),
+        value: d.paidAmount || 0,
+      }))
+    : [{ label: "No Data", value: 1 }];
+
+  let maxVal = Math.max(...chartData.map((d) => d.value));
+  if (maxVal === 0) maxVal = 1;
+  
+  const total = chartData.reduce((sum, d) => sum + (d.value === 1 && d.label === "No Data" ? 0 : d.value), 0);
+  const summary = { total: `₹${total.toLocaleString()}`, change: "--", up: true };
+
   const chartH = hp(180);
   const ySteps = 4;
   const yLabels = Array.from(
@@ -707,7 +778,7 @@ function SalesChartSection() {
           <View
             style={[s.chartPillsContainer, { backgroundColor: colors.cardAlt }]}
           >
-            {(["week", "month"] as const).map((p) => (
+            {(["sales", "hourly"] as const).map((p) => (
               <TouchableOpacity
                 key={p}
                 onPress={() => setPeriod(p)}
@@ -725,7 +796,7 @@ function SalesChartSection() {
                     { color: period === p ? "#FFFFFF" : colors.textTertiary },
                   ]}
                 >
-                  {p === "week" ? "Week" : "Month"}
+                  {p === "sales" ? "Overview" : "Hourly"}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -767,8 +838,8 @@ function SalesChartSection() {
           {yLabels.map((v, i) => (
             <Text key={i} style={[s.yLabel, { color: colors.textTertiary }]}>
               {v >= 1000
-                ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k`
-                : Math.round(v)}
+                ? `₹${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}K`
+                : `₹${Math.round(v)}`}
             </Text>
           ))}
         </View>
@@ -866,9 +937,19 @@ function SalesChartSection() {
                 {chartData.map((d, i) => (
                   <View
                     key={i}
-                    style={{ width: barWidth + barGap, alignItems: "center" }}
+                    style={{
+                      width: barWidth + barGap,
+                      alignItems: "center",
+                      justifyContent: "flex-start",
+                      paddingTop: hp(4),
+                    }}
                   >
-                    <Text style={[s.xLabel, { color: colors.textTertiary }]}>
+                    <Text 
+                      style={[s.xLabel, { color: colors.textTertiary }]}
+                      numberOfLines={2}
+                      adjustsFontSizeToFit
+                      minimumFontScale={0.8}
+                    >
                       {d.label}
                     </Text>
                   </View>
@@ -914,9 +995,20 @@ function describeArc(
   ].join(" ");
 }
 
-function PaymentDonutSection() {
+function PaymentDonutSection({ data }: { data: any[] }) {
   const { colors } = useTheme();
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+
+  if (!data || data.length === 0) {
+    return (
+      <Card>
+        <SectionHeader title="Payment Breakdown" />
+        <View style={{ padding: 20, alignItems: 'center' }}>
+          <Text style={{ color: colors.textSecondary }}>No payment data available</Text>
+        </View>
+      </Card>
+    );
+  }
 
   const size = wp(PIE_DONUT_SIZE);
   const cx = size / 2;
@@ -924,9 +1016,24 @@ function PaymentDonutSection() {
   const r = (size - wp(PIE_STROKE_W)) / 2;
   const strokeW = wp(PIE_STROKE_W);
 
+  const total = data.reduce((sum, d) => sum + (d.paidAmount || 0), 0);
+
+  const mappedData = data.map((d, i) => {
+    const colorKeys = ["green", "blue", "purple", "orange", "red"] as const;
+    const colorKey = colorKeys[i % colorKeys.length];
+    const pct = total > 0 ? (d.paidAmount || 0) / total : 0;
+    return {
+      label: d.payMode || "Unknown",
+      amount: `₹${(d.paidAmount || 0).toLocaleString()}`,
+      rawAmount: d.paidAmount || 0,
+      pct,
+      colorKey,
+    };
+  });
+
   // Build arcs
   let currentAngle = 0;
-  const arcs = PAYMENT_DATA.map((p, _i) => {
+  const arcs = mappedData.map((p, _i) => {
     const sweep = p.pct * 360;
     const startAngle = currentAngle;
     const endAngle = currentAngle + sweep;
@@ -939,7 +1046,7 @@ function PaymentDonutSection() {
     };
   });
 
-  const selectedItem = selectedIdx !== null ? PAYMENT_DATA[selectedIdx] : null;
+  const selectedItem = selectedIdx !== null ? mappedData[selectedIdx] : null;
 
   return (
     <Card>
@@ -992,7 +1099,7 @@ function PaymentDonutSection() {
             ) : (
               <>
                 <Text style={[s.pieCenterValue, { color: colors.textPrimary }]}>
-                  ₹43.7K
+                  ₹{total.toLocaleString()}
                 </Text>
                 <Text style={[s.pieCenterSub, { color: colors.textTertiary }]}>
                   Total
@@ -1004,7 +1111,7 @@ function PaymentDonutSection() {
 
         {/* Legend */}
         <View style={s.paymentLegend}>
-          {PAYMENT_DATA.map((p, i) => (
+          {mappedData.map((p, i) => (
             <Pressable
               key={i}
               onPress={() => setSelectedIdx(selectedIdx === i ? null : i)}
@@ -1023,7 +1130,7 @@ function PaymentDonutSection() {
                 ]}
               >
                 <Ionicons
-                  name={PAYMENT_ICONS[p.label] as any}
+                  name={"card-outline" as any}
                   size={ms(16)}
                   color={colors[p.colorKey]}
                 />
@@ -1053,106 +1160,134 @@ function PaymentDonutSection() {
   );
 }
 
-// ─── Order Types (Premium Cards) ────────────────────────────
-function OrderTypeSection() {
+// ─── Taxes Summary ──────────────────────────────────────────────
+function TaxSummarySection({ data }: { data: any[] }) {
   const { colors } = useTheme();
-  const totalOrders = ORDER_TYPES.reduce((sum, o) => sum + o.orders, 0);
+
+  if (!data) {
+    return (
+      <Card>
+        <SectionHeader title="Taxes Summary" />
+        <View style={{ padding: hp(20), alignItems: 'center' }}>
+          <Text style={{ color: colors.textSecondary }}>Taxes data unavailable</Text>
+        </View>
+      </Card>
+    );
+  }
+
+  if (data.length === 0) return null;
 
   return (
     <Card>
-      <SectionHeader title="Order Type Distribution" />
+      <SectionHeader title="Taxes Summary" />
+      <View style={{ gap: hp(16), marginTop: hp(10) }}>
+        {data.map((tax, i) => {
+          const isTotal = tax.taxName?.toLowerCase().includes("total");
+          const isCGST = tax.taxName?.toLowerCase().includes("cgst");
+          const isSGST = tax.taxName?.toLowerCase().includes("sgst");
 
-      {/* Stacked horizontal bar */}
-      <View style={[s.otStackedBar, { backgroundColor: colors.border }]}>
-        {ORDER_TYPES.map((o, i) => (
-          <View
-            key={i}
-            style={[
-              s.otStackedSeg,
-              {
-                flex: o.pct,
-                backgroundColor: colors[o.colorKey],
-              },
-              i === 0 && {
-                borderTopLeftRadius: wp(6),
-                borderBottomLeftRadius: wp(6),
-              },
-              i === ORDER_TYPES.length - 1 && {
-                borderTopRightRadius: wp(6),
-                borderBottomRightRadius: wp(6),
-              },
-            ]}
-          />
-        ))}
-      </View>
+          let iconName = "file-text";
+          let iconColor = colors.textSecondary;
+          let iconBg = colors.cardAlt;
 
-      {/* Order type cards */}
-      <View style={s.otCardsRow}>
-        {ORDER_TYPES.map((o, i) => (
-          <View
-            key={i}
-            style={[s.otCard, { backgroundColor: colors[o.colorKey] + "0A" }]}
-          >
-            {/* Icon */}
-            <View
-              style={[
-                s.otCardIcon,
-                { backgroundColor: colors[o.colorKey] + "18" },
-              ]}
-            >
-              <Ionicons
-                name={o.icon}
-                size={ms(20)}
-                color={colors[o.colorKey]}
-              />
+          if (isTotal) {
+            iconName = "pie-chart";
+            iconColor = "#FFF";
+            iconBg = colors.primary;
+          } else if (isCGST) {
+            iconName = "file";
+            iconColor = colors.blue;
+            iconBg = colors.blue + "15";
+          } else if (isSGST) {
+            iconName = "file-text";
+            iconColor = "#8B5CF6"; // subtle purple
+            iconBg = "#8B5CF615";
+          }
+
+          const value = tax.taxValue || 0;
+          const isZero = value === 0;
+
+          return (
+            <View key={i}>
+              {/* Divider above Total Tax row */}
+              {isTotal && i > 0 && (
+                <View
+                  style={{
+                    height: StyleSheet.hairlineWidth,
+                    backgroundColor: colors.border,
+                    marginBottom: hp(16),
+                    marginTop: hp(4),
+                  }}
+                />
+              )}
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <View
+                    style={{
+                      width: ms(36),
+                      height: ms(36),
+                      borderRadius: ms(10),
+                      backgroundColor: iconBg,
+                      justifyContent: "center",
+                      alignItems: "center",
+                      marginRight: wp(12),
+                    }}
+                  >
+                    <Feather name={iconName as any} size={ms(18)} color={iconColor} />
+                  </View>
+                  <Text
+                    style={{
+                      color: isTotal ? colors.textPrimary : colors.textSecondary,
+                      fontSize: ms(15),
+                      fontWeight: isTotal ? "bold" : "500",
+                    }}
+                  >
+                    {tax.taxName || "Unknown Tax"}
+                  </Text>
+                </View>
+                <Text
+                  style={{
+                    color: isZero
+                      ? colors.textTertiary
+                      : isTotal
+                      ? colors.primary
+                      : colors.textPrimary,
+                    fontSize: isTotal ? ms(16) : ms(14),
+                    fontWeight: isTotal ? "bold" : "600",
+                  }}
+                >
+                  ₹{value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </Text>
+              </View>
             </View>
-
-            {/* Label */}
-            <Text style={[s.otCardLabel, { color: colors.textPrimary }]}>
-              {o.label}
-            </Text>
-
-            {/* Orders count */}
-            <Text style={[s.otCardOrders, { color: colors.textTertiary }]}>
-              {o.orders} orders
-            </Text>
-
-            {/* Sales */}
-            <Text style={[s.otCardSales, { color: colors.textPrimary }]}>
-              {o.sales}
-            </Text>
-
-            {/* Percentage badge */}
-            <View
-              style={[
-                s.otPctBadge,
-                { backgroundColor: colors[o.colorKey] + "18" },
-              ]}
-            >
-              <Text style={[s.otPctText, { color: colors[o.colorKey] }]}>
-                {o.pct}%
-              </Text>
-            </View>
-          </View>
-        ))}
-      </View>
-
-      {/* Total */}
-      <View style={[s.otTotalRow, { borderTopColor: colors.border }]}>
-        <Text style={[s.otTotalLabel, { color: colors.textTertiary }]}>
-          Total Orders
-        </Text>
-        <Text style={[s.otTotalValue, { color: colors.textPrimary }]}>
-          {totalOrders}
-        </Text>
+          );
+        })}
       </View>
     </Card>
   );
 }
 
 // ─── Revenue Leakage ────────────────────────────────────────
-function RevenueLeakage() {
+function RevenueLeakage({ data }: { data: any }) {
   const { colors } = useTheme();
+
+  if (!data) return null;
+
+  const leakageData = [
+    { label: "Cancelled Bills", value: data.cancelBills || 0, icon: "close-circle-outline" },
+    { label: "Compliment Bills", value: data.complimentBills || 0, icon: "gift-outline" },
+    { label: "Reprint Bills", value: data.reprintBills || 0, icon: "printer-outline" },
+    { label: "Modified Bills", value: data.modifedBills || 0, icon: "file-document-edit-outline" },
+    { label: "Cancelled KOT", value: data.cancelledKOT || 0, icon: "alert-circle-outline" },
+    { label: "Deleted KOT", value: data.deletedKOT || 0, icon: "trash-can-outline" },
+  ];
+
   return (
     <Card>
       <SectionHeader
@@ -1167,7 +1302,7 @@ function RevenueLeakage() {
         }
       />
       <View style={s.leakageGrid}>
-        {LEAKAGE_DATA.map((l, i) => (
+        {leakageData.map((l, i) => (
           <View key={i} style={[s.leakageCard, { backgroundColor: colors.bg }]}>
             <View
               style={[s.leakageIconWrap, { backgroundColor: colors.redBg }]}
@@ -1192,21 +1327,45 @@ function RevenueLeakage() {
 }
 
 // ─── Expenses (Horizontal Stacked Bar) ──────────────────────
-function ExpensesSection() {
+function ExpensesSection({ data }: { data: any[] }) {
   const { colors } = useTheme();
+
+  if (!data || data.length === 0) {
+    return (
+      <Card>
+        <SectionHeader title="Expenses" />
+        <View style={{ padding: 20, alignItems: 'center' }}>
+          <Text style={{ color: colors.textSecondary }}>No expense data available</Text>
+        </View>
+      </Card>
+    );
+  }
+
+  const total = data.reduce((sum, e) => sum + (e.expenseAmount || 0), 0);
+  const mappedData = data.map((e, i) => {
+    const colorKeys = ["primary", "orange", "teal", "textTertiary", "red", "blue"] as const;
+    const colorKey = colorKeys[i % colorKeys.length];
+    return {
+      label: e.categoryName || "Unknown",
+      amount: `₹${(e.expenseAmount || 0).toLocaleString()}`,
+      pct: total > 0 ? (e.expenseAmount || 0) / total : 0,
+      colorKey,
+    };
+  });
+
   return (
     <Card>
       <SectionHeader
         title="Expenses"
         rightElement={
           <Text style={[s.expenseTotal, { color: colors.accent }]}>
-            ₹12,450
+            ₹{total.toLocaleString()}
           </Text>
         }
       />
       {/* Stacked bar */}
       <View style={[s.stackedBar, { backgroundColor: colors.border }]}>
-        {EXPENSE_DATA.map((e, i) => (
+        {mappedData.map((e, i) => (
           <View
             key={i}
             style={[
@@ -1219,7 +1378,7 @@ function ExpensesSection() {
                 borderTopLeftRadius: wp(6),
                 borderBottomLeftRadius: wp(6),
               },
-              i === EXPENSE_DATA.length - 1 && {
+              i === mappedData.length - 1 && {
                 borderTopRightRadius: wp(6),
                 borderBottomRightRadius: wp(6),
               },
@@ -1229,7 +1388,7 @@ function ExpensesSection() {
       </View>
       {/* Legend */}
       <View style={s.expenseLegendGrid}>
-        {EXPENSE_DATA.map((e, i) => (
+        {mappedData.map((e, i) => (
           <View key={i} style={s.expenseLegendItem}>
             <View style={s.expenseLegendRow}>
               <View
@@ -1255,9 +1414,19 @@ function ExpensesSection() {
 const MEDAL_COLORS = ["#F59E0B", "#94A3B8", "#D97706"] as const;
 const MEDAL_BG = ["#FEF3C7", "#F1F5F9", "#FEF3C7"] as const;
 
-function TopSellingSection() {
+function TopSellingSection({ data }: { data: any[] }) {
   const { colors } = useTheme();
-  const bestSeller = TOP_ITEMS[0];
+  
+  if (!data || data.length === 0) return null;
+
+  const totalSales = data.reduce((sum, d) => sum + (d.totalPrice || 0), 0);
+  const topItems = data.slice(0, 5).map(d => ({
+    name: d.productDescription || "Unknown",
+    qty: d.count || 0,
+    revenue: `₹${(d.totalPrice || 0).toLocaleString()}`,
+    pct: totalSales > 0 ? (d.totalPrice || 0) / totalSales : 0,
+  }));
+  const bestSeller = topItems[0];
 
   return (
     <Card>
@@ -1290,7 +1459,7 @@ function TopSellingSection() {
 
       {/* Item List */}
       <View style={s.tsListWrap}>
-        {TOP_ITEMS.map((item, i) => {
+        {topItems.map((item, i) => {
           const isTop3 = i < 3;
           const medalColor = isTop3 ? MEDAL_COLORS[i] : colors.textTertiary;
           const medalBg = isTop3 ? MEDAL_BG[i] : colors.cardAlt;
@@ -1300,7 +1469,7 @@ function TopSellingSection() {
               key={i}
               style={[
                 s.tsItemRow,
-                i < TOP_ITEMS.length - 1 && {
+                i < topItems.length - 1 && {
                   borderBottomWidth: StyleSheet.hairlineWidth,
                   borderBottomColor: colors.border,
                 },
@@ -1553,10 +1722,10 @@ const s = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.02,
+    shadowRadius: 4,
+    elevation: 1,
   },
   branchSelector: {
     flex: 1,
@@ -1568,10 +1737,10 @@ const s = StyleSheet.create({
     marginHorizontal: wp(10),
     borderRadius: wp(12),
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.02,
+    shadowRadius: 4,
+    elevation: 1,
   },
   branchText: {
     fontSize: ms(15),
@@ -1602,10 +1771,10 @@ const s = StyleSheet.create({
     borderRadius: wp(16),
     padding: wp(16),
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 4,
   },
   dropdownHeader: {
     flexDirection: "row",
@@ -1664,10 +1833,10 @@ const s = StyleSheet.create({
     padding: wp(14),
     borderRadius: wp(20),
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.04,
-    shadowRadius: 16,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.02,
+    shadowRadius: 8,
+    elevation: 2,
     borderWidth: 1,
     borderColor: "rgba(0,0,0,0.03)", // subtle border for modern feel
   },
@@ -1733,18 +1902,18 @@ const s = StyleSheet.create({
     gap: wp(4),
   },
   chartTotalBadgeText: { fontSize: ms(12), fontWeight: "700" },
-  chartContainer: { flexDirection: "row", marginTop: hp(20) },
+  chartContainer: { flexDirection: "row", marginTop: hp(24), marginBottom: hp(8) },
   yAxis: {
     justifyContent: "space-between",
     alignItems: "flex-end",
-    marginRight: wp(10),
-    paddingBottom: hp(28), // reserve space for x-axis labels
+    marginRight: wp(12),
+    paddingBottom: hp(32), // reserve space for multiline x-axis labels
   },
-  yLabel: { fontSize: ms(10), fontWeight: "500" },
+  yLabel: { fontSize: ms(10), fontWeight: "600" },
   chartGridArea: {
     justifyContent: "space-between",
   },
-  gridLine: { height: StyleSheet.hairlineWidth, opacity: 0.7 },
+  gridLine: { height: StyleSheet.hairlineWidth, opacity: 0.3 },
   barValueLabels: {
     position: "absolute",
     left: 0,
@@ -1764,7 +1933,7 @@ const s = StyleSheet.create({
     marginTop: hp(8),
     paddingLeft: wp(4),
   },
-  xLabel: { fontSize: ms(11), fontWeight: "600", textAlign: "center" },
+  xLabel: { fontSize: ms(10), fontWeight: "600", textAlign: "center", lineHeight: ms(14) },
 
   // Payment Breakdown
   paymentLayout: {
