@@ -45,7 +45,7 @@ export default function Card({
 const styles = StyleSheet.create({
     card: {
         borderRadius: wp(20),
-        marginTop: hp(16),
+        marginTop: hp(20),
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.02,

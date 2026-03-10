@@ -16,17 +16,17 @@ import Animated, {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DashboardScreen from "../screens/DashboardScreen";
 import InventoryScreen from "../screens/InventoryScreen";
-import ProfileScreen from "../screens/ProfileScreen";
+import PerformanceScreen from "../screens/PerformanceScreen";
 import PurchaseOrdersScreen from "../screens/PurchaseOrdersScreen";
 import { ms, useTheme, wp } from "../theme";
 
 const Tab = createBottomTabNavigator();
 
 const TABS = [
-  { name: "Dashboard", label: "Dashboard", icon: "grid", iconType: "feather" },
+  { name: "Dashboard", label: "Home", icon: "home", iconType: "feather" },
   { name: "Inventory", label: "Inventory", icon: "cube-outline", iconType: "ionicons" },
-  { name: "PurchaseOrders", label: "Orders", icon: "file-text", iconType: "feather" },
-  { name: "Profile", label: "Profile", icon: "user", iconType: "feather" },
+  { name: "PurchaseOrders", label: "Orders", icon: "pie-chart", iconType: "feather" },
+  { name: "Performance", label: "Performance", icon: "activity", iconType: "feather" },
 ] as const;
 
 // ─── Tab Bar Constants ──────────────────────────────────────
@@ -232,7 +232,7 @@ export default function MainTabs() {
       <Tab.Screen name="Dashboard" component={DashboardScreen} />
       <Tab.Screen name="Inventory" component={InventoryScreen} />
       <Tab.Screen name="PurchaseOrders" component={PurchaseOrdersScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Performance" component={PerformanceScreen} />
     </Tab.Navigator>
   );
 }
@@ -240,7 +240,7 @@ export default function MainTabs() {
 // ─── Styles ─────────────────────────────────────────────────
 const styles = StyleSheet.create({
   wrapper: {
-    shadowColor: "#1A237E",
+    shadowColor: "#4F46E5",
     shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.02,
     shadowRadius: 8,

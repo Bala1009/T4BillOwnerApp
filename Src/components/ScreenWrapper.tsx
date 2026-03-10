@@ -6,7 +6,7 @@ import {
     type StyleProp,
     type ViewStyle,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, type Edge } from "react-native-safe-area-context";
 import { hp, useTheme, wp } from "../theme";
 
 interface ScreenWrapperProps {
@@ -17,6 +17,13 @@ interface ScreenWrapperProps {
     style?: StyleProp<ViewStyle>;
     /** Horizontal padding for scroll content. Default: 16 */
     paddingH?: number;
+    /**
+     * Which safe-area edges to respect.
+     * Default: ['top','bottom','left','right']
+     * Pass ['bottom','left','right'] on screens that render their own
+     * header (e.g. GradientHeader) so the status bar area is not doubled.
+     */
+    edges?: Edge[];
 }
 
 /**
@@ -28,12 +35,16 @@ export default function ScreenWrapper({
     scrollable = false,
     style,
     paddingH = 16,
+    edges,
 }: ScreenWrapperProps) {
     const { colors } = useTheme();
 
     if (scrollable) {
         return (
-            <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }, style]}>
+            <SafeAreaView
+                edges={edges}
+                style={[styles.safeArea, { backgroundColor: colors.bg }, style]}
+            >
                 <StatusBar barStyle={colors.statusBar} backgroundColor={colors.statusBarBg} />
                 <ScrollView
                     style={styles.flex}
@@ -51,7 +62,10 @@ export default function ScreenWrapper({
     }
 
     return (
-        <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.bg }, style]}>
+        <SafeAreaView
+            edges={edges}
+            style={[styles.safeArea, { backgroundColor: colors.bg }, style]}
+        >
             <StatusBar barStyle={colors.statusBar} backgroundColor={colors.statusBarBg} />
             {children}
         </SafeAreaView>

@@ -721,7 +721,7 @@ const styles = StyleSheet.create({
         alignItems: "center",
     },
     dayCellSelected: {
-        shadowColor: "#1A237E",
+        shadowColor: "#4F46E5",
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 4,
@@ -777,7 +777,7 @@ const styles = StyleSheet.create({
         borderWidth: 1.5,
     },
     applyBtn: {
-        shadowColor: "#1A237E",
+        shadowColor: "#4F46E5",
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 4,

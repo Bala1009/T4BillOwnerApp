@@ -1,10 +1,11 @@
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useState, useEffect } from "react";
+import React, { useCallback, useState, useEffect, useRef } from "react";
 import {
   ActivityIndicator,
   FlatList,
   Modal,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,6 +14,7 @@ import {
   View,
   DeviceEventEmitter,
 } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Animated, {
   useAnimatedStyle,
@@ -23,9 +25,12 @@ import Animated, {
 import Svg, {
   Circle,
   Defs,
+  G,
+  Line,
   LinearGradient,
   Path,
   Stop,
+  Text as SvgText,
 } from "react-native-svg";
 import {
   CalendarPicker,
@@ -40,6 +45,7 @@ import axiosInstance from "../api/axiosInstance";
 import { getBranchMaster } from "../api/branchService";
 import { getSalesDetails } from "../api/dashboardService";
 import { useAuth } from "../context/AuthContext";
+import { useDateFilter } from "../context/DateFilterContext";
 
 // ─── Dummy Data Removed ─────────────────────────────────────
 
@@ -54,12 +60,17 @@ function buildAreaPath(
 ): { linePath: string; areaPath: string } {
   const maxVal = Math.max(...data);
   const minVal = Math.min(...data);
-  const range = maxVal - minVal || 1;
+  const range = maxVal - minVal;
   const stepX = (width - padding * 2) / (data.length - 1);
+
+  // If all values are 0 (or identical zeros), draw a flat line at the bottom
+  const allZero = maxVal === 0 && minVal === 0;
 
   const points = data.map((v, i) => ({
     x: padding + i * stepX,
-    y: padding + (1 - (v - minVal) / range) * (height - padding * 2),
+    y: allZero
+      ? height - padding          // flat line at the bottom
+      : padding + (1 - (v - minVal) / (range || 1)) * (height - padding * 2),
   }));
 
   let linePath = `M ${points[0].x} ${points[0].y}`;
@@ -82,27 +93,19 @@ function buildAreaPath(
 export default function DashboardScreen() {
   const { authData } = useAuth();
   const { colors } = useTheme();
-  
-  const now = new Date();
-  const [dateRange, setDateRange] = useState<DateRange>({
-    start: new Date(now.getFullYear(), now.getMonth(), 1),
-    end: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
-  });
-  const [activeFilter, setActiveFilter] = useState<QuickFilter>("this_month");
+  // ── Global date filter (shared across all screens) ────────
+  const { dateRange, activeFilter, startDate, endDate, setDateFilter } = useDateFilter();
+
   const [selectedBranch, setSelectedBranch] = useState<any | null>(null);
   const [dashboardData, setDashboardData] = useState<any | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const fetchDashboardData = useCallback(async () => {
     if (!authData?.ClientID || !selectedBranch) return;
 
-    const formatAsYMD = (date: Date) => {
-      const y = date.getFullYear();
-      const m = String(date.getMonth() + 1).padStart(2, '0');
-      const d = String(date.getDate()).padStart(2, '0');
-      return `${y}-${m}-${d}`;
-    };
+
 
     const branchIdNum = 
       selectedBranch?.BranchID ||
@@ -126,8 +129,8 @@ export default function DashboardScreen() {
     const phaseValue = selectedBranch?.Phase || selectedBranch?.phase || null;
 
     const payload: any = {
-      startDate: formatAsYMD(dateRange.start),
-      endDate: formatAsYMD(dateRange.end),
+      startDate,
+      endDate,
       branchID: branchIdNum,
       clientID: Number(authData?.ClientID)
     };
@@ -139,7 +142,7 @@ export default function DashboardScreen() {
     console.log("[DashboardScreen] Request Payload:", JSON.stringify(payload, null, 2));
 
     try {
-      setIsLoading(true);
+      if (!isRefreshing) setIsLoading(true);
       setErrorMsg(null);
       const dbData = await getSalesDetails(payload);
       console.log("[DashboardScreen] Dashboard Data received:", JSON.stringify(dbData, null, 2));
@@ -149,20 +152,15 @@ export default function DashboardScreen() {
       setErrorMsg("Failed to load dashboard data. Please check your network connection and try again.");
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
-  }, [dateRange, selectedBranch, authData?.ClientID]);
+  }, [startDate, endDate, selectedBranch, authData?.ClientID]);
 
   useEffect(() => {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
-  const handleDateRangeChange = useCallback(
-    (range: DateRange, filter: QuickFilter) => {
-      setDateRange(range);
-      setActiveFilter(filter);
-    },
-    [],
-  );
+  // Removed — CalendarPicker now calls setDateFilter from context directly
 
   // Ensure arrays are typed consistently for ItemRankingSection
   const itemWiseSales = dashboardData?.dashBoardItemWiseSalesList || [];
@@ -181,17 +179,28 @@ export default function DashboardScreen() {
   const lowByQtyRaw = [...itemWiseSales].sort((a, b) => (a.count || 0) - (b.count || 0));
 
   return (
-    <ScreenWrapper scrollable>
+    <ScreenWrapper>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: hp(40) }}
+        contentContainerStyle={{ paddingHorizontal: wp(16), paddingBottom: hp(60), paddingTop: hp(8) }}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={() => {
+              setIsRefreshing(true);
+              fetchDashboardData();
+            }}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
       >
         <Header onBranchSelected={setSelectedBranch} />
         <Greeting />
         <CalendarPicker
           dateRange={dateRange}
           activeFilter={activeFilter}
-          onDateRangeChange={handleDateRangeChange}
+          onDateRangeChange={setDateFilter}
         />
         {isLoading ? (
           <View style={{ padding: hp(40), alignItems: 'center' }}>
@@ -213,7 +222,11 @@ export default function DashboardScreen() {
           </View>
         ) : dashboardData ? (
           <>
-            <KPIGrid data={dashboardData.dashBoardCount} />
+            <KPIGrid
+              data={dashboardData.dashBoardCount}
+              salesList={dashboardData.dashBoardSalesList || []}
+              hourlyList={dashboardData.dashBoardHourlyList || []}
+            />
             <SalesChartSection 
               salesData={dashboardData.dashBoardSalesList} 
               hourlyData={dashboardData.dashBoardHourlyList} 
@@ -267,6 +280,7 @@ export default function DashboardScreen() {
 function Header({ onBranchSelected }: { onBranchSelected?: (branch: any) => void }) {
   const { colors } = useTheme();
   const { authData } = useAuth();
+  const navigation = useNavigation<any>();
   const [branches, setBranches] = useState<any[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<any | null>(null);
   const [isDropdownVisible, setDropdownVisible] = useState(false);
@@ -327,6 +341,11 @@ function Header({ onBranchSelected }: { onBranchSelected?: (branch: any) => void
     <View style={s.header}>
       <TouchableOpacity
         style={[s.headerIcon, { backgroundColor: colors.card }]}
+        onPress={() => {
+          const parent = navigation.getParent();
+          if (parent && parent.openDrawer) parent.openDrawer();
+          else navigation.openDrawer?.();
+        }}
       >
         <Feather name="menu" size={ms(22)} color={colors.textPrimary} />
       </TouchableOpacity>
@@ -356,6 +375,7 @@ function Header({ onBranchSelected }: { onBranchSelected?: (branch: any) => void
 
       <TouchableOpacity
         style={[s.headerIcon, { backgroundColor: colors.card }]}
+        onPress={() => navigation.navigate('Notifications')}
       >
         <View>
           <Feather name="bell" size={ms(22)} color={colors.textPrimary} />
@@ -496,13 +516,13 @@ function Greeting() {
         {getGreetingMessage()}, {getFirstName()}
       </Text>
       <Text style={[s.greetingSubtitle, { color: colors.textSecondary }]}>
-        Here your business overview today
+        Here's your business overview
       </Text>
     </View>
   );
 }
 
-// ─── KPI Cards (Creative) ───────────────────────────────────
+// ─── KPI Cards: SparklineMini with path animation ─────────────
 function SparklineMini({
   data,
   color,
@@ -516,8 +536,57 @@ function SparklineMini({
 }) {
   const w = wp(width);
   const h = hp(height);
+  const gradId = `spark_${color.replace('#', '')}`;
+
+  // Check whether there is any meaningful data to plot
+  const hasValues = data.some(v => v !== 0);
+
+  // Compute the full path immediately
   const { linePath, areaPath } = buildAreaPath(data, w, h);
-  const gradId = `spark_${color.replace("#", "")}`;
+
+  // Use RN Animated to animate the stroke-dashoffset from full length → 0
+  // giving a "drawing" effect whenever data changes
+  const { Animated: RNAnimated } = require('react-native');
+  const progress = useRef(new RNAnimated.Value(0)).current;
+  // Re-run animation whenever data identity changes (key array joined)
+  const dataKey = data.join(',');
+  useEffect(() => {
+    progress.setValue(0);
+    RNAnimated.timing(progress, {
+      toValue: 1,
+      duration: 800,
+      useNativeDriver: false,
+    }).start();
+  }, [dataKey]);
+
+  // Approximate path length as width (good enough for short sparklines)
+  const pathLen = w * 2;
+  const strokeDashoffset = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [pathLen, 0],
+  });
+
+  // We render the area (static) + animated line overlay
+  const AnimatedNativePath = RNAnimated.createAnimatedComponent(
+    require('react-native-svg').Path
+  );
+
+  // When all values are 0, render a subtle flat dashed line (no area fill)
+  if (!hasValues) {
+    return (
+      <Svg width={w} height={h}>
+        <Path
+          d={`M 4 ${h - 4} L ${w - 4} ${h - 4}`}
+          fill="none"
+          stroke={color}
+          strokeWidth={1.5}
+          strokeOpacity={0.25}
+          strokeDasharray="4,4"
+          strokeLinecap="round"
+        />
+      </Svg>
+    );
+  }
 
   return (
     <Svg width={w} height={h}>
@@ -527,13 +596,17 @@ function SparklineMini({
           <Stop offset="1" stopColor={color} stopOpacity="0.02" />
         </LinearGradient>
       </Defs>
+      {/* Static area fill */}
       <Path d={areaPath} fill={`url(#${gradId})`} />
-      <Path
+      {/* Animated stroke – draws from left to right */}
+      <AnimatedNativePath
         d={linePath}
         fill="none"
         stroke={color}
         strokeWidth={2}
         strokeLinecap="round"
+        strokeDasharray={pathLen}
+        strokeDashoffset={strokeDashoffset}
       />
     </Svg>
   );
@@ -542,13 +615,40 @@ function SparklineMini({
 type KPIDataType = {
   title: string;
   value: string;
+  rawNum: number;          // raw number for animated counter
   change: string;
   up: boolean;
-  icon: "trending-up" | "shopping-bag" | "credit-card" | "dollar-sign" | "arrow-up-right" | "arrow-down-right";
-  colorKey: "green" | "blue" | "red" | "orange";
-  bgKey: "greenBg" | "blueBg" | "redBg" | "orangeBg";
+  icon: 'trending-up' | 'shopping-bag' | 'credit-card' | 'dollar-sign' | 'arrow-up-right' | 'arrow-down-right';
+  colorKey: 'green' | 'blue' | 'red' | 'orange';
+  bgKey: 'greenBg' | 'blueBg' | 'redBg' | 'orangeBg';
   sparkline: number[];
 };
+
+// ─── Animated KPI value counter ─────────────────────────────
+function AnimatedKPIValue({ rawNum, prefix = '', suffix = '', style }: { rawNum: number; prefix?: string; suffix?: string; style: any }) {
+  const { Animated: RNAnimated } = require('react-native');
+  const anim = useRef(new RNAnimated.Value(0)).current;
+  const [display, setDisplay] = useState(0);
+
+  useEffect(() => {
+    anim.setValue(0);
+    RNAnimated.timing(anim, { toValue: rawNum, duration: 900, useNativeDriver: false }).start();
+    const id = anim.addListener(({ value }: { value: number }) => setDisplay(Math.round(value)));
+    return () => anim.removeListener(id);
+  }, [rawNum]);
+
+  const formatted = display >= 1000
+    ? display >= 100000
+      ? `${(display / 100000).toFixed(1)}L`
+      : `${(display / 1000).toFixed(1)}K`
+    : `${display}`;
+
+  return (
+    <Text style={style} numberOfLines={1} adjustsFontSizeToFit>
+      {prefix}{formatted}{suffix}
+    </Text>
+  );
+}
 
 function AnimatedKPICard({
   item,
@@ -564,6 +664,10 @@ function AnimatedKPICard({
       transform: [{ scale: scale.value }],
     };
   });
+
+  // Parse the raw numeric value from the item for counting animation
+  const rawNum = item.rawNum ?? 0;
+  const isRupee = item.value.startsWith('₹');
 
   return (
     <Animated.View style={[s.kpiCardWidth, animatedStyle]}>
@@ -594,7 +698,7 @@ function AnimatedKPICard({
             ]}
           >
             <Feather
-              name={item.up ? "arrow-up-right" : "arrow-down-right"}
+              name={item.up ? 'arrow-up-right' : 'arrow-down-right'}
               size={ms(12)}
               color={item.up ? colors.green : colors.red}
             />
@@ -615,13 +719,11 @@ function AnimatedKPICard({
             <Text style={[s.kpiTitle, { color: colors.textTertiary }]}>
               {item.title}
             </Text>
-            <Text
+            <AnimatedKPIValue
+              rawNum={rawNum}
+              prefix={isRupee ? '₹' : ''}
               style={[s.kpiValue, { color: colors.textPrimary }]}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-            >
-              {item.value}
-            </Text>
+            />
           </View>
           {/* Sparkline */}
           <View style={s.sparklineWrap}>
@@ -638,60 +740,145 @@ function AnimatedKPICard({
   );
 }
 
-function KPIGrid({ data }: { data: any }) {
+// ─── Helpers for building per-metric sparklines ─────────────────
+function buildSparklines(salesList: any[], hourlyList: any[]) {
+  // Prefer daily sales list; fall back to hourly if daily is empty
+  const source = salesList?.length >= 2 ? salesList : (hourlyList?.length >= 2 ? hourlyList : []);
+
+  if (source.length < 2) {
+    // Not enough points — return a flat line at zero (no misleading trend)
+    return { revenue: [0, 0, 0], bills: [0, 0, 0], expenses: [0, 0, 0], profit: [0, 0, 0] };
+  }
+
+  const revenue  = source.map((d: any) => Math.max(0, d.paidAmount     || 0));
+  const bills    = source.map((d: any) => Math.max(0, d.billCount       || d.totalBills || 0));
+  const expenses = source.map((d: any) => Math.max(0, d.expenseAmount   || d.expense    || 0));
+  const profit   = source.map((d: any) => {
+    const r = d.paidAmount   || 0;
+    const e = d.expenseAmount || d.expense || 0;
+    return r - e;
+  });
+
+  // Ensure at least 2 distinct values so the path builder doesn't divide by zero.
+  // If ALL values are 0, keep them at 0 so the sparkline stays flat (no false trend).
+  const ensure = (arr: number[]) => {
+    if (arr.every(v => v === 0)) return arr; // all zeros → stay flat
+    return arr.every(v => v === arr[0]) ? arr.map((v, i) => v + i * 0.001) : arr;
+  };
+
+  return {
+    revenue:  ensure(revenue),
+    bills:    ensure(bills),
+    expenses: ensure(expenses),
+    profit:   ensure(profit),
+  };
+}
+
+function KPIGrid({ data, salesList, hourlyList }: { data: any; salesList?: any[]; hourlyList?: any[] }) {
   const { colors } = useTheme();
 
   if (!data) return null;
 
-  const profit = (data.todaysPayments || 0) - (data.todayExpenses || 0);
+  const todaysPayments = data.todaysPayments || 0;
+  const todayExpenses  = data.todayExpenses  || 0;
+  const totalBills     = data.totalBills     || 0;
+  const cancelBills    = data.cancelBills    || 0;
+  const profit = todaysPayments - todayExpenses;
 
-  const mappedData = [
+  // Compute dynamic change indicators
+  const profitMarginPct = todaysPayments > 0
+    ? Math.round((profit / todaysPayments) * 100)
+    : 0;
+  const expenseRatioPct = todaysPayments > 0
+    ? Math.round((todayExpenses / todaysPayments) * 100)
+    : 0;
+  const cancelRate = totalBills > 0
+    ? Math.round((cancelBills / totalBills) * 100)
+    : 0;
+  const avgOrderValue = totalBills > 0
+    ? Math.round(todaysPayments / totalBills)
+    : 0;
+
+  const sparks = buildSparklines(salesList || [], hourlyList || []);
+
+  // Zero-out sparkline data when the KPI aggregate value is 0
+  // This prevents the graph from showing a misleading trend from
+  // individual time-period data while the aggregate is actually zero.
+  const FLAT = [0, 0, 0];
+
+  const mappedData: KPIDataType[] = [
     {
-      title: "Revenue",
-      value: `₹${(data.todaysPayments || 0).toLocaleString()}`,
-      change: "--",
-      up: true,
-      icon: "trending-up" as const,
-      colorKey: "green" as const,
-      bgKey: "greenBg" as const,
-      sparkline: [10, 10, 10], // Flat sparkline when data lacks it
+      title: 'Revenue',
+      value: `₹${todaysPayments.toLocaleString()}`,
+      rawNum: todaysPayments,
+      change: `${profitMarginPct}% margin`,
+      up: profitMarginPct >= 0,
+      icon: 'trending-up',
+      colorKey: 'green',
+      bgKey: 'greenBg',
+      sparkline: todaysPayments > 0 ? sparks.revenue : FLAT,
     },
     {
-      title: "Bills",
-      value: `${data.totalBills || 0}`,
-      change: "--",
+      title: 'Total Bills',
+      value: `${totalBills}`,
+      rawNum: totalBills,
+      change: `Avg ₹${avgOrderValue.toLocaleString()}`,
       up: true,
-      icon: "shopping-bag" as const,
-      colorKey: "blue" as const,
-      bgKey: "blueBg" as const,
-      sparkline: [10, 10, 10],
+      icon: 'shopping-bag',
+      colorKey: 'blue',
+      bgKey: 'blueBg',
+      sparkline: totalBills > 0 ? sparks.bills : FLAT,
     },
     {
-      title: "Expenses",
-      value: `₹${(data.todayExpenses || 0).toLocaleString()}`,
-      change: "--",
+      title: 'Expenses',
+      value: `₹${todayExpenses.toLocaleString()}`,
+      rawNum: todayExpenses,
+      change: `${expenseRatioPct}% of rev`,
       up: false,
-      icon: "credit-card" as const,
-      colorKey: "red" as const,
-      bgKey: "redBg" as const,
-      sparkline: [10, 10, 10],
+      icon: 'credit-card',
+      colorKey: 'red',
+      bgKey: 'redBg',
+      sparkline: todayExpenses > 0 ? sparks.expenses : FLAT,
     },
     {
-      title: "Profit",
+      title: 'Profit',
       value: `₹${profit.toLocaleString()}`,
-      change: "--",
+      rawNum: profit,
+      change: `${profitMarginPct}%`,
       up: profit >= 0,
-      icon: "dollar-sign" as const,
-      colorKey: "orange" as const,
-      bgKey: "orangeBg" as const,
-      sparkline: [10, 10, 10],
+      icon: 'dollar-sign',
+      colorKey: profit >= 0 ? 'green' : 'red',
+      bgKey: profit >= 0 ? 'greenBg' : 'redBg',
+      sparkline: profit !== 0 ? sparks.profit : FLAT,
+    },
+    {
+      title: 'Cancel Bills',
+      value: `${cancelBills}`,
+      rawNum: cancelBills,
+      change: `${cancelRate}% rate`,
+      up: cancelBills === 0,
+      icon: 'trending-up',
+      colorKey: cancelBills === 0 ? 'green' : 'red',
+      bgKey: cancelBills === 0 ? 'greenBg' : 'redBg',
+      sparkline: cancelBills > 0 ? sparks.bills : FLAT,
+    },
+    {
+      title: 'Avg Order',
+      value: `₹${avgOrderValue.toLocaleString()}`,
+      rawNum: avgOrderValue,
+      change: `${totalBills} orders`,
+      up: true,
+      icon: 'shopping-bag',
+      colorKey: 'blue',
+      bgKey: 'blueBg',
+      sparkline: avgOrderValue > 0 ? sparks.revenue : FLAT,
     },
   ];
 
   return (
     <View style={s.kpiGrid}>
       {mappedData.map((item, i) => (
-        <AnimatedKPICard key={i} item={item as any} colors={colors} />
+        <AnimatedKPICard key={i} item={item} colors={colors} />
       ))}
     </View>
   );
@@ -743,18 +930,28 @@ function SalesChartSection({ salesData, hourlyData }: { salesData: any[], hourly
   };
 
   const activeData = period === "sales" ? (salesData || []) : (hourlyData || []);
-  const chartData = activeData.length > 0 
+  const hasData = activeData.length > 0;
+  const chartData = hasData
     ? activeData.map((d: any) => ({
         label: formatXLabel(d.hours, period),
         value: d.paidAmount || 0,
       }))
-    : [{ label: "No Data", value: 1 }];
+    : [];
 
-  let maxVal = Math.max(...chartData.map((d) => d.value));
+  let maxVal = hasData ? Math.max(...chartData.map((d) => d.value)) : 0;
   if (maxVal === 0) maxVal = 1;
   
-  const total = chartData.reduce((sum, d) => sum + (d.value === 1 && d.label === "No Data" ? 0 : d.value), 0);
-  const summary = { total: `₹${total.toLocaleString()}`, change: "--", up: true };
+  const total = chartData.reduce((sum, d) => sum + d.value, 0);
+  const dataPointCount = activeData.length;
+  const summary = {
+    total: `₹${total.toLocaleString()}`,
+    change: dataPointCount > 0 ? `${dataPointCount} ${period === 'hourly' ? 'hours' : 'entries'}` : 'No data',
+    up: total > 0,
+  };
+
+  const emptyMessage = period === 'hourly'
+    ? 'No hourly sales data available'
+    : 'No sales data available for this period';
 
   const chartH = hp(180);
   const ySteps = 4;
@@ -832,6 +1029,7 @@ function SalesChartSection({ salesData, hourlyData }: { salesData: any[], hourly
       </View>
 
       {/* Chart */}
+      {hasData ? (
       <View style={s.chartContainer}>
         {/* Y axis labels */}
         <View style={[s.yAxis, { height: chartH }]}>
@@ -861,104 +1059,185 @@ function SalesChartSection({ salesData, hourlyData }: { salesData: any[], hourly
                 ))}
               </View>
 
-              {/* Bars */}
-              <Svg
-                width={areaWidth}
-                height={chartH}
-                style={{ position: "absolute" }}
-              >
-                <Defs>
-                  <LinearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
-                    <Stop
-                      offset="0"
-                      stopColor={colors.primary}
-                      stopOpacity="1"
-                    />
-                    <Stop
-                      offset="1"
-                      stopColor={colors.primary}
-                      stopOpacity="0.4"
-                    />
-                  </LinearGradient>
-                </Defs>
-                {chartData.map((d, i) => {
-                  const barH = (d.value / maxVal) * (chartH - hp(24));
-                  const x = barGap + i * (barWidth + barGap);
-                  const y = chartH - barH;
-                  const radius = Math.min(barWidth / 2, wp(8));
+              {/* Area Line Chart (Overview) or Bar Chart (Hourly) */}
+              {period === 'sales' ? (
+                <>
+                  {/* ── Smooth Area Line Chart with integrated X labels ── */}
+                  {(() => {
+                    const pad = wp(16);
+                    const innerW = areaWidth - pad * 2;
+                    const topPad = hp(8);
+                    const bottomPad = hp(24);
+                    const innerH = chartH - topPad - bottomPad;
+                    const stepX = chartData.length > 1 ? innerW / (chartData.length - 1) : 0;
 
-                  const barPath = [
-                    `M ${x} ${chartH}`,
-                    `L ${x} ${y + radius}`,
-                    `Q ${x} ${y}, ${x + radius} ${y}`,
-                    `L ${x + barWidth - radius} ${y}`,
-                    `Q ${x + barWidth} ${y}, ${x + barWidth} ${y + radius}`,
-                    `L ${x + barWidth} ${chartH}`,
-                    `Z`,
-                  ].join(" ");
+                    // Build bezier-curved path
+                    const pts = chartData.map((d, i) => ({
+                      x: pad + i * stepX,
+                      y: topPad + (1 - d.value / maxVal) * innerH,
+                    }));
 
-                  return <Path key={i} d={barPath} fill="url(#barGrad)" />;
-                })}
-              </Svg>
+                    let linePath = `M ${pts[0].x} ${pts[0].y}`;
+                    for (let i = 1; i < pts.length; i++) {
+                      const prev = pts[i - 1];
+                      const curr = pts[i];
+                      const cpx1 = prev.x + stepX * 0.4;
+                      const cpx2 = curr.x - stepX * 0.4;
+                      linePath += ` C ${cpx1} ${prev.y}, ${cpx2} ${curr.y}, ${curr.x} ${curr.y}`;
+                    }
 
-              {/* Value labels above bars */}
-              <View style={[s.barValueLabels, { height: chartH }]}>
-                {chartData.map((d, i) => {
-                  const barH = (d.value / maxVal) * (chartH - hp(24));
-                  return (
-                    <View
-                      key={i}
-                      style={[
-                        s.barValueWrap,
-                        {
-                          left: barGap + i * (barWidth + barGap),
-                          width: barWidth,
-                          bottom: barH + hp(4),
-                        },
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          s.barValueText,
-                          { color: colors.textSecondary },
-                        ]}
-                      >
-                        {d.value >= 1000
-                          ? `${(d.value / 1000).toFixed(1)}k`
-                          : d.value}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
+                    // Area fill stops above X labels
+                    const areaBottom = topPad + innerH;
+                    const areaLinePath = `${linePath} L ${pts[pts.length - 1].x} ${areaBottom} L ${pts[0].x} ${areaBottom} Z`;
 
-              {/* X labels */}
-              <View style={s.xAxis}>
-                {chartData.map((d, i) => (
-                  <View
-                    key={i}
-                    style={{
-                      width: barWidth + barGap,
-                      alignItems: "center",
-                      justifyContent: "flex-start",
-                      paddingTop: hp(4),
-                    }}
+                    return (
+                      <Svg width={areaWidth} height={chartH} style={{ position: 'absolute' }}>
+                        <Defs>
+                          <LinearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                            <Stop offset="0" stopColor={colors.primary} stopOpacity="0.25" />
+                            <Stop offset="0.7" stopColor={colors.primary} stopOpacity="0.08" />
+                            <Stop offset="1" stopColor={colors.primary} stopOpacity="0" />
+                          </LinearGradient>
+                          <LinearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
+                            <Stop offset="0" stopColor={colors.blue} stopOpacity="1" />
+                            <Stop offset="1" stopColor={colors.primary} stopOpacity="1" />
+                          </LinearGradient>
+                        </Defs>
+                        {/* Gradient area fill */}
+                        <Path d={areaLinePath} fill="url(#areaGrad)" />
+                        {/* Smooth curve line */}
+                        <Path d={linePath} fill="none" stroke="url(#lineGrad)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+                        {/* Data point dots */}
+                        {pts.map((p, i) => (
+                          <G key={`dot-${i}`}>
+                            <Circle cx={p.x} cy={p.y} r={wp(5)} fill={colors.card} stroke={colors.primary} strokeWidth={2} />
+                            <Circle cx={p.x} cy={p.y} r={wp(2)} fill={colors.primary} />
+                          </G>
+                        ))}
+                        {/* X-axis labels rendered inside SVG */}
+                        {pts.map((p, i) => {
+                          const showLabel = chartData.length <= 6 || i % Math.ceil(chartData.length / 5) === 0 || i === chartData.length - 1;
+                          if (!showLabel) return null;
+                          return (
+                            <SvgText
+                              key={`xl-${i}`}
+                              x={p.x}
+                              y={chartH - hp(4)}
+                              fontSize={ms(10)}
+                              fontWeight="600"
+                              fill={colors.textTertiary}
+                              textAnchor="middle"
+                            >
+                              {chartData[i].label}
+                            </SvgText>
+                          );
+                        })}
+                      </Svg>
+                    );
+                  })()}
+                </>
+              ) : (
+                <>
+                  {/* ── Rounded Bar Chart (Hourly) ── */}
+                  <Svg
+                    width={areaWidth}
+                    height={chartH}
+                    style={{ position: "absolute" }}
                   >
-                    <Text 
-                      style={[s.xLabel, { color: colors.textTertiary }]}
-                      numberOfLines={2}
-                      adjustsFontSizeToFit
-                      minimumFontScale={0.8}
-                    >
-                      {d.label}
-                    </Text>
+                    <Defs>
+                      <LinearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
+                        <Stop offset="0" stopColor={colors.primary} stopOpacity="1" />
+                        <Stop offset="1" stopColor={colors.primary} stopOpacity="0.4" />
+                      </LinearGradient>
+                    </Defs>
+                    {chartData.map((d, i) => {
+                      const barH = (d.value / maxVal) * (chartH - hp(24));
+                      const x = barGap + i * (barWidth + barGap);
+                      const y = chartH - barH;
+                      const radius = Math.min(barWidth / 2, wp(8));
+
+                      const barPath = [
+                        `M ${x} ${chartH}`,
+                        `L ${x} ${y + radius}`,
+                        `Q ${x} ${y}, ${x + radius} ${y}`,
+                        `L ${x + barWidth - radius} ${y}`,
+                        `Q ${x + barWidth} ${y}, ${x + barWidth} ${y + radius}`,
+                        `L ${x + barWidth} ${chartH}`,
+                        `Z`,
+                      ].join(" ");
+
+                      return <Path key={i} d={barPath} fill="url(#barGrad)" />;
+                    })}
+                  </Svg>
+
+                  {/* Value labels above bars */}
+                  <View style={[s.barValueLabels, { height: chartH }]}>
+                    {chartData.map((d, i) => {
+                      const barH = (d.value / maxVal) * (chartH - hp(24));
+                      return (
+                        <View
+                          key={i}
+                          style={[
+                            s.barValueWrap,
+                            {
+                              left: barGap + i * (barWidth + barGap),
+                              width: barWidth,
+                              bottom: barH + hp(4),
+                            },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              s.barValueText,
+                              { color: colors.textSecondary },
+                            ]}
+                          >
+                            {d.value >= 1000
+                              ? `${(d.value / 1000).toFixed(1)}k`
+                              : d.value}
+                          </Text>
+                        </View>
+                      );
+                    })}
                   </View>
-                ))}
-              </View>
+
+                  {/* X labels */}
+                  <View style={s.xAxis}>
+                    {chartData.map((d, i) => (
+                      <View
+                        key={i}
+                        style={{
+                          width: barWidth + barGap,
+                          alignItems: "center",
+                          justifyContent: "flex-start",
+                          paddingTop: hp(4),
+                        }}
+                      >
+                        <Text 
+                          style={[s.xLabel, { color: colors.textTertiary }]}
+                          numberOfLines={2}
+                          adjustsFontSizeToFit
+                          minimumFontScale={0.8}
+                        >
+                          {d.label}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </>
+              )}
             </>
           )}
         </View>
       </View>
+      ) : (
+        <View style={{ paddingVertical: hp(40), alignItems: 'center' }}>
+          <Feather name="bar-chart-2" size={ms(40)} color={colors.textTertiary} style={{ marginBottom: hp(12), opacity: 0.4 }} />
+          <Text style={{ color: colors.textSecondary, fontSize: ms(14), fontWeight: '500', textAlign: 'center' }}>
+            {emptyMessage}
+          </Text>
+        </View>
+      )}
     </Card>
   );
 }
@@ -1281,11 +1560,11 @@ function RevenueLeakage({ data }: { data: any }) {
 
   const leakageData = [
     { label: "Cancelled Bills", value: data.cancelBills || 0, icon: "close-circle-outline" },
-    { label: "Compliment Bills", value: data.complimentBills || 0, icon: "gift-outline" },
-    { label: "Reprint Bills", value: data.reprintBills || 0, icon: "printer-outline" },
-    { label: "Modified Bills", value: data.modifedBills || 0, icon: "file-document-edit-outline" },
-    { label: "Cancelled KOT", value: data.cancelledKOT || 0, icon: "alert-circle-outline" },
-    { label: "Deleted KOT", value: data.deletedKOT || 0, icon: "trash-can-outline" },
+    { label: "Compliment Bills", value: data.complimentaryBills || data.complimentBills || 0, icon: "gift-outline" },
+    { label: "Reprint Bills", value: data.reprintBills || data.rePrintBills || 0, icon: "printer-outline" },
+    { label: "Modified Bills", value: data.modifiedBills || data.modifedBills || 0, icon: "file-document-edit-outline" },
+    { label: "Cancelled KOT", value: data.cancelledKOT || data.cancelKOT || 0, icon: "alert-circle-outline" },
+    { label: "Deleted KOT", value: data.deletedKOT || data.deleteKOT || 0, icon: "trash-can-outline" },
   ];
 
   return (
@@ -1809,7 +2088,7 @@ const s = StyleSheet.create({
   },
 
   // Greeting
-  greetingContainer: { marginTop: hp(8), marginBottom: hp(4) },
+  greetingContainer: { marginTop: hp(12), marginBottom: hp(8) },
   greetingTitle: { fontSize: ms(24), fontWeight: "700", letterSpacing: -0.3 },
   greetingSubtitle: { fontSize: ms(14), marginTop: hp(4) },
 

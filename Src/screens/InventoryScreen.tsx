@@ -21,8 +21,9 @@ import {
 import Svg, { Circle, Path } from "react-native-svg";
 import { getBranchMaster } from "../api/branchService";
 import { getSalesDetails } from "../api/dashboardService";
-import { Card, ScreenWrapper, SectionHeader } from "../components";
+import { Card, GradientHeader, ScreenWrapper, SectionHeader } from "../components";
 import { useAuth } from "../context/AuthContext";
+import { useDateFilter } from "../context/DateFilterContext";
 import { RootStackParamList } from "../navigation/AppNavigator";
 import { hp, ms, useTheme, wp } from "../theme";
 
@@ -40,7 +41,7 @@ export interface InventorySalesItem {
 }
 
 function getCategoryFromName(name: string): string {
-  const lower = name.toLowerCase();
+  const lower = (name || '').toLowerCase();
   if (lower.includes("burger")) return "Burger";
   if (lower.includes("cake") || lower.includes("dessert") || lower.includes("pastry") || lower.includes("sweets")) return "Cakes";
   if (lower.includes("lunch") || lower.includes("meal") || lower.includes("dinner") || lower.includes("breakfast") || lower.includes("thali") || lower.includes("rice")) return "Lunch";
@@ -55,6 +56,7 @@ export default function InventoryScreen() {
   const { colors } = useTheme();
   const navigation = useNavigation<InventoryScreenNavigationProp>();
   const { authData } = useAuth();
+  const { startDate, endDate } = useDateFilter();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -110,20 +112,7 @@ export default function InventoryScreen() {
           }
         }
 
-        const now = new Date();
-        const formatAsYMD = (date: Date) => {
-          const y = date.getFullYear();
-          const m = String(date.getMonth() + 1).padStart(2, "0");
-          const d = String(date.getDate()).padStart(2, "0");
-          return `${y}-${m}-${d}`;
-        };
-
-        const startDate = formatAsYMD(
-          new Date(now.getFullYear(), now.getMonth(), 1),
-        );
-        const endDate = formatAsYMD(
-          new Date(now.getFullYear(), now.getMonth(), now.getDate()),
-        );
+        // Use the global date filter from context
 
         let activeBranchObj: any = null;
         if (forcedBranchId) {
@@ -203,7 +192,7 @@ export default function InventoryScreen() {
         setRefreshing(false);
       }
     },
-    [authData?.ClientID],
+    [authData?.ClientID, startDate, endDate],
   );
 
   useEffect(() => {
@@ -240,7 +229,7 @@ export default function InventoryScreen() {
 
     if (searchQuery.trim() !== "") {
       result = result.filter((p) =>
-        p.name.toLowerCase().includes(searchQuery.toLowerCase()),
+        (p.name || '').toLowerCase().includes(searchQuery.toLowerCase()),
       );
     }
 
@@ -248,7 +237,7 @@ export default function InventoryScreen() {
   }, [searchQuery, products]);
 
   const renderIcon = (name: string) => {
-    const lower = name.toLowerCase();
+    const lower = (name || '').toLowerCase();
     if (lower.includes("burger"))
       return (
         <MaterialCommunityIcons
@@ -420,7 +409,7 @@ export default function InventoryScreen() {
     let startAngle = -Math.PI / 2;
 
     const renderIconForCategory = (catName: string, color: string) => {
-      const lower = catName.toLowerCase();
+      const lower = (catName || '').toLowerCase();
       if (lower.includes("burger")) return <MaterialCommunityIcons name="hamburger" size={ms(16)} color={color} />;
       if (lower.includes("cake")) return <MaterialCommunityIcons name="cake-variant" size={ms(16)} color={color} />;
       if (lower.includes("lunch")) return <MaterialCommunityIcons name="food-fork-drink" size={ms(16)} color={color} />;
@@ -540,7 +529,7 @@ export default function InventoryScreen() {
 
   const renderFilters = () => {
     const suggestions = searchQuery.trim() !== ""
-      ? products.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase())).slice(0, 5)
+      ? products.filter(p => (p.name || '').toLowerCase().includes(searchQuery.toLowerCase())).slice(0, 5)
       : [];
     const showSuggestions = isSearchFocused && searchQuery.length > 0 && suggestions.length > 0;
 
@@ -694,7 +683,8 @@ export default function InventoryScreen() {
 
   if (loading && !refreshing) {
     return (
-      <ScreenWrapper>
+      <ScreenWrapper edges={['bottom', 'left', 'right']}>
+        <GradientHeader title="Inventory" onBack={() => navigation.goBack()} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={{ marginTop: hp(12), color: colors.textSecondary }}>
@@ -707,57 +697,18 @@ export default function InventoryScreen() {
 
   if (errorMsg) {
     return (
-      <ScreenWrapper>
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={styles.backButton}
-          >
-            <Feather
-              name="arrow-left"
-              size={ms(24)}
-              color={colors.textPrimary}
-            />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
-            Inventory
-          </Text>
-          <View style={{ width: ms(24) }} />
-        </View>
-        <View
-          style={{
-            flex: 1,
-            justifyContent: "center",
-            alignItems: "center",
-            padding: hp(40),
-          }}
-        >
-          <Feather
-            name="alert-circle"
-            size={ms(48)}
-            color={colors.red}
-            style={{ marginBottom: hp(16) }}
-          />
-          <Text
-            style={{
-              textAlign: "center",
-              color: colors.textPrimary,
-              fontSize: ms(16),
-              marginBottom: hp(24),
-            }}
-          >
+      <ScreenWrapper edges={['bottom', 'left', 'right']}>
+        <GradientHeader title="Inventory" onBack={() => navigation.goBack()} />
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: hp(40) }}>
+          <Feather name="alert-circle" size={ms(48)} color={colors.red} style={{ marginBottom: hp(16) }} />
+          <Text style={{ textAlign: 'center', color: colors.textPrimary, fontSize: ms(16), marginBottom: hp(24) }}>
             {errorMsg}
           </Text>
           <TouchableOpacity
-            style={{
-              backgroundColor: colors.primary,
-              paddingHorizontal: wp(24),
-              paddingVertical: hp(12),
-              borderRadius: ms(8),
-            }}
+            style={{ backgroundColor: colors.primary, paddingHorizontal: wp(24), paddingVertical: hp(12), borderRadius: ms(8) }}
             onPress={() => loadData()}
           >
-            <Text style={{ color: "#FFF", fontWeight: "bold" }}>Retry</Text>
+            <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Retry</Text>
           </TouchableOpacity>
         </View>
       </ScreenWrapper>
@@ -765,23 +716,12 @@ export default function InventoryScreen() {
   }
 
   return (
-    <ScreenWrapper>
-      <KeyboardAvoidingView 
-        style={{ flex: 1 }} 
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+    <ScreenWrapper edges={['bottom', 'left', 'right']}>
+      <GradientHeader title="Inventory" onBack={() => navigation.goBack()} />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={styles.header}>
-          <TouchableOpacity
-            onPress={() => navigation.goBack()}
-            style={styles.backButton}
-          >
-            <Feather name="arrow-left" size={ms(24)} color={colors.textPrimary} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>
-            Inventory
-          </Text>
-          <View style={{ width: ms(24) }} />
-        </View>
 
         <FlatList
           keyboardShouldPersistTaps="handled"
@@ -842,11 +782,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   listContent: {
-    paddingBottom: hp(24),
+    paddingBottom: hp(40),
+    paddingTop: hp(8),
   },
   hScrollContent: {
-    paddingHorizontal: 16,
+    paddingHorizontal: wp(16),
     paddingBottom: hp(16),
+    paddingTop: hp(4),
     gap: wp(12),
   },
   summaryCard: {

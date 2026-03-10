@@ -1,6 +1,8 @@
 import type { StatusBarStyle } from "react-native";
 
-// ─── Light & Dark color palettes ────────────────────────────
+// ─── Fresh, Modern Color Palettes ────────────────────────────
+// Inspired by premium SaaS dashboards (Linear, Vercel, Stripe)
+// with vibrant yet harmonious tones.
 
 interface ThemePalette {
     bg: string;
@@ -40,51 +42,52 @@ interface ThemePalette {
     splashSubtext: string;
     splashFooter: string;
 }
+
 export const LightColors: ThemePalette = {
-    // Backgrounds
-    bg: "#F5F7FA",
+    // Backgrounds — warm off-white for a fresh feel
+    bg: "#F8FAFC",
     card: "#FFFFFF",
-    cardAlt: "#F0F2F5",
+    cardAlt: "#F1F5F9",
 
-    // Primary & Accent
-    primary: "#1A237E",
-    primaryLight: "#EAECF9",
-    accent: "#E53935",
+    // Primary — vibrant indigo-blue with warm undertone
+    primary: "#4F46E5",
+    primaryLight: "#EEF2FF",
+    accent: "#F43F5E",
 
-    // Text
-    textPrimary: "#1A1A2E",
-    textSecondary: "#4A5568",
-    textTertiary: "#A0AEC0",
+    // Text — rich, readable hierarchy
+    textPrimary: "#0F172A",
+    textSecondary: "#475569",
+    textTertiary: "#94A3B8",
 
-    // Semantic
-    green: "#38A169",
-    greenBg: "#F0FFF4",
-    red: "#E53935",
-    redBg: "#FFF5F5",
-    blue: "#3182CE",
-    blueBg: "#EBF4FF",
-    orange: "#DD6B20",
-    orangeBg: "#FFFAF0",
-    purple: "#805AD5",
-    purpleBg: "#FAF5FF",
-    teal: "#319795",
-    tealBg: "#E6FFFA",
+    // Semantic — vivid and distinct
+    green: "#10B981",
+    greenBg: "#ECFDF5",
+    red: "#EF4444",
+    redBg: "#FEF2F2",
+    blue: "#3B82F6",
+    blueBg: "#EFF6FF",
+    orange: "#F59E0B",
+    orangeBg: "#FFFBEB",
+    purple: "#6366F1",
+    purpleBg: "#EEF2FF",
+    teal: "#14B8A6",
+    tealBg: "#F0FDFA",
 
     // UI Elements
-    border: "#EDF2F7",
-    shadow: "#000000",
+    border: "#E2E8F0",
+    shadow: "#0F172A",
     inputBg: "#FFFFFF",
-    inputBorder: "#E2E8F0",
+    inputBorder: "#CBD5E1",
     placeholder: "#94A3B8",
 
     // Status bar
     statusBar: "dark-content",
-    statusBarBg: "#F5F7FA",
+    statusBarBg: "#F8FAFC",
 
     // Tab bar
     tabBg: "#FFFFFF",
-    tabInactive: "#9CA3AF",
-    tabActiveBg: "#EAECF9",
+    tabInactive: "#94A3B8",
+    tabActiveBg: "#EEF2FF",
 
     // Splash
     splashBg: "#0F172A",
@@ -95,52 +98,52 @@ export const LightColors: ThemePalette = {
 };
 
 export const DarkColors: ThemePalette = {
-    // Backgrounds
-    bg: "#0F1117",
-    card: "#1A1D2E",
-    cardAlt: "#242738",
+    // Backgrounds — deep, rich dark with subtle blue undertone
+    bg: "#0C0F1A",
+    card: "#161B2E",
+    cardAlt: "#1E2438",
 
-    // Primary & Accent
-    primary: "#7C84F8",
-    primaryLight: "#2A2D44",
-    accent: "#FF6B6B",
+    // Primary — luminous indigo for dark mode
+    primary: "#818CF8",
+    primaryLight: "#252A40",
+    accent: "#FB7185",
 
-    // Text
+    // Text — clear contrast on dark backgrounds
     textPrimary: "#F1F5F9",
     textSecondary: "#94A3B8",
     textTertiary: "#64748B",
 
-    // Semantic
-    green: "#48BB78",
-    greenBg: "#1A2E1A",
-    red: "#FF6B6B",
-    redBg: "#2E1A1A",
-    blue: "#63B3ED",
-    blueBg: "#1A2236",
-    orange: "#F6AD55",
-    orangeBg: "#2E2418",
-    purple: "#B794F4",
-    purpleBg: "#261A36",
-    teal: "#4FD1C5",
-    tealBg: "#1A2E2C",
+    // Semantic — brighter variants for dark mode readability
+    green: "#34D399",
+    greenBg: "#0D2818",
+    red: "#FB7185",
+    redBg: "#2A1520",
+    blue: "#60A5FA",
+    blueBg: "#152040",
+    orange: "#FBBF24",
+    orangeBg: "#2A2210",
+    purple: "#A78BFA",
+    purpleBg: "#1E1840",
+    teal: "#2DD4BF",
+    tealBg: "#0D2828",
 
     // UI Elements
-    border: "#2D3148",
+    border: "#1E293B",
     shadow: "#000000",
-    inputBg: "#1A1D2E",
-    inputBorder: "#2D3148",
+    inputBg: "#161B2E",
+    inputBorder: "#1E293B",
     placeholder: "#64748B",
 
     // Status bar
     statusBar: "light-content",
-    statusBarBg: "#0F1117",
+    statusBarBg: "#0C0F1A",
 
     // Tab bar
-    tabBg: "#161826",
+    tabBg: "#111525",
     tabInactive: "#64748B",
-    tabActiveBg: "#2A2D44",
+    tabActiveBg: "#252A40",
 
-    // Splash (same in dark)
+    // Splash
     splashBg: "#0F172A",
     splashCard: "#1E293B",
     splashText: "#FFFFFF",
