@@ -70,9 +70,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     try {
-      await AsyncStorage.removeItem('authtoken');
-      await AsyncStorage.removeItem('ClientID');
-      await AsyncStorage.removeItem('userDetails');
+      // Clear ALL stored data — auth tokens, branch cache, preferences, etc.
+      await AsyncStorage.clear();
       setAuthDataState({ authtoken: null, ClientID: null, userDetails: null });
     } catch (error) {
       console.error('Error during logout', error);

@@ -782,8 +782,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   listContent: {
-    paddingBottom: hp(40),
-    paddingTop: hp(8),
+    paddingBottom: hp(60),
+    paddingTop: hp(12),
   },
   hScrollContent: {
     paddingHorizontal: wp(16),

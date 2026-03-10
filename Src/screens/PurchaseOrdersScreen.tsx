@@ -364,17 +364,25 @@ export default function PurchaseOrdersScreen() {
     const hourlyList = dashboardData?.dashBoardHourlyList || [];
     if (hourlyList.length === 0) return null;
 
+    // Format hourly labels as readable "12 PM", "3 AM" format
     const formatHourLabel = (val: string) => {
       const numMatch = val.match(/^(\d+)/);
       if (numMatch) {
         const num = parseInt(numMatch[1], 10);
         if (!isNaN(num) && num >= 0 && num <= 24) {
-          const ampm = num >= 12 && num < 24 ? "PM" : "AM";
+          const ampm = num >= 12 && num < 24 ? 'PM' : 'AM';
           const h = num % 12 || 12;
-          return `${h}${ampm}`;
+          return `${h} ${ampm}`;
         }
       }
-      return val;
+      // For non-numeric: full readable labels
+      const lower = val.toLowerCase().trim();
+      const labelMap: Record<string, string> = {
+        ret: 'Retail Orders', can: 'Cancelled Orders', com: 'Complimentary',
+        tot: 'Total Orders', sunday: 'Sun', monday: 'Mon', tuesday: 'Tue',
+        wednesday: 'Wed', thursday: 'Thu', friday: 'Fri', saturday: 'Sat',
+      };
+      return labelMap[lower] || val;
     };
 
     const points = hourlyList.map((item: any) => ({
@@ -383,21 +391,27 @@ export default function PurchaseOrdersScreen() {
     }));
 
     const maxVal = Math.max(...points.map((p: any) => p.value), 1);
-    const chartHeight = ms(220);
+
+    // ── Chart dimensions with generous breathing space ──
+    const chartHeight = ms(250);
     const chartWidth = scrWidth - wp(32) - ms(24) - wp(8);
-    
-    const paddingTop = ms(30);
-    const paddingBottom = ms(30);
-    const paddingHorizontal = ms(24);
+    const paddingTop = ms(24);
+    const paddingBottom = ms(36);
+    const leftPad = ms(48);
+    const rightPad = ms(16);
 
     const innerHeight = chartHeight - paddingTop - paddingBottom;
-    const innerWidth = chartWidth - paddingHorizontal * 2;
+    const innerWidth = chartWidth - leftPad - rightPad;
     const stepX = points.length > 1 ? innerWidth / (points.length - 1) : 0;
+
+    // Y-axis grid values (5 levels)
+    const ySteps = 4;
+    const yValues = Array.from({ length: ySteps + 1 }, (_, i) => Math.round(maxVal * (1 - i / ySteps)));
 
     const generateSmoothPath = () => {
       if (points.length === 0) return "";
       const coords = points.map((p: any, i: number) => ({
-        x: paddingHorizontal + i * stepX,
+        x: leftPad + i * stepX,
         y: chartHeight - paddingBottom - (p.value / maxVal) * innerHeight,
       }));
       let d = `M ${coords[0].x} ${coords[0].y}`;
@@ -413,18 +427,21 @@ export default function PurchaseOrdersScreen() {
 
     const smoothPath = generateSmoothPath();
     const smoothArea = points.length > 1
-      ? `${smoothPath} L ${paddingHorizontal + (points.length - 1) * stepX} ${chartHeight - paddingBottom} L ${paddingHorizontal} ${chartHeight - paddingBottom} Z`
+      ? `${smoothPath} L ${leftPad + (points.length - 1) * stepX} ${chartHeight - paddingBottom} L ${leftPad} ${chartHeight - paddingBottom} Z`
       : "";
 
     return (
       <View style={s.section}>
         <SectionHeader title="Orders Insights" />
-        <Card style={s.insightsCard}>
+        <Card style={[s.insightsCard, { paddingTop: hp(20), paddingBottom: hp(16) }]}>
           <View style={s.insightsHeader}>
              <Feather name="trending-up" size={ms(18)} color={colors.primary} />
-             <Text style={[s.insightsTitle, { color: colors.textPrimary }]}>Orders Trend Over Time</Text>
+             <View>
+               <Text style={[s.insightsTitle, { color: colors.textPrimary }]}>Orders Trend Over Time</Text>
+               <Text style={{ color: colors.textTertiary, fontSize: ms(12), marginTop: hp(2) }}>Hourly order activity</Text>
+             </View>
           </View>
-          <View style={s.chartContainer}>
+          <View style={[s.chartContainer, { marginTop: hp(12) }]}>
             <Svg width={chartWidth} height={chartHeight}>
               <Defs>
                 <LinearGradient id="ordersAreaGrad" x1="0" y1="0" x2="0" y2="1">
@@ -438,28 +455,28 @@ export default function PurchaseOrdersScreen() {
                 </LinearGradient>
               </Defs>
               
-              {/* Horizontal Grid Lines */}
-              {[1, 0.75, 0.5, 0.25, 0].map((ratio) => {
-                const y = chartHeight - paddingBottom - ratio * innerHeight;
+              {/* Y-axis grid lines and labels */}
+              {yValues.map((val, i) => {
+                const y = paddingTop + (i / ySteps) * innerHeight;
                 return (
-                   <G key={`grid-${ratio}`}>
+                   <G key={`grid-${i}`}>
                      <Line 
-                       x1={paddingHorizontal - 10} 
+                       x1={leftPad} 
                        y1={y} 
-                       x2={chartWidth - paddingHorizontal / 2} 
+                       x2={chartWidth - rightPad} 
                        y2={y} 
                        stroke={colors.border} 
                        strokeWidth="1" 
                        strokeDasharray="4 4" 
                      />
                      <SvgText
-                        x={paddingHorizontal - 15}
+                        x={leftPad - ms(6)}
                         y={y + 4}
-                        fontSize="10"
+                        fontSize={ms(11)}
                         fill={colors.textTertiary}
                         textAnchor="end"
                      >
-                        {Math.round(ratio * maxVal)}
+                        {val >= 1000 ? `${(val / 1000).toFixed(1)}K` : val}
                      </SvgText>
                    </G>
                 );
@@ -469,7 +486,7 @@ export default function PurchaseOrdersScreen() {
               {points.length > 1 && <Path d={smoothPath} fill="none" stroke="url(#ordersLineGrad)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
 
               {points.map((p: any, i: number) => {
-                const x = paddingHorizontal + i * stepX;
+                const x = leftPad + i * stepX;
                 const y = chartHeight - paddingBottom - (p.value / maxVal) * innerHeight;
                 const showLabel = points.length < 8 || i % Math.ceil(points.length / 5) === 0 || i === points.length - 1;
 
@@ -480,8 +497,8 @@ export default function PurchaseOrdersScreen() {
                     {showLabel && (
                       <SvgText
                         x={x}
-                        y={chartHeight - 10}
-                        fontSize="10"
+                        y={chartHeight - ms(6)}
+                        fontSize={ms(11)}
                         fontWeight="600"
                         fill={colors.textSecondary}
                         textAnchor="middle"
@@ -507,7 +524,7 @@ export default function PurchaseOrdersScreen() {
 
     const formatLabel = (val: string | null | undefined) => {
       const v = (val ?? '').toLowerCase().trim();
-      const map: Record<string, string> = { ret: "Retail Sales", can: "Cancelled Bills", com: "Complimentary Bills", tot: "Total" };
+      const map: Record<string, string> = { ret: "Retail Orders", can: "Cancelled Orders", com: "Complimentary Orders", tot: "Total Orders" };
       return map[v] || val || '';
     };
 
@@ -630,7 +647,7 @@ const s = StyleSheet.create({
   },
   contentPad: {
     paddingHorizontal: wp(16),
-    paddingTop: hp(8),
+    paddingTop: hp(12),
     paddingBottom: hp(60),
   },
   
@@ -638,6 +655,7 @@ const s = StyleSheet.create({
   summaryContainer: {
     marginBottom: hp(4),
     marginTop: hp(16),
+    marginHorizontal: -wp(16),
   },
   summaryScroll: {
     paddingHorizontal: wp(16),
@@ -673,7 +691,6 @@ const s = StyleSheet.create({
   },
   
   section: {
-    paddingHorizontal: wp(16),
     marginBottom: hp(24),
   },
   

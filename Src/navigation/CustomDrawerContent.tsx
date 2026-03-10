@@ -1,7 +1,7 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Modal } from 'react-native';
 import { DrawerContentScrollView } from '@react-navigation/drawer';
-import { CommonActions, useNavigation } from '@react-navigation/native';
+import { useNavigation, CommonActions } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
 import { hp, ms, useTheme, wp } from '../theme';
 import { useAuth } from '../context/AuthContext';
@@ -10,7 +10,6 @@ type MenuItem = {
   label: string;
   icon: string;
   action: 'tab' | 'screen';
-  /** For tab items, the name of the Tab route. For screen items, the name of Stack/Drawer route. */
   target: string;
 };
 
@@ -19,13 +18,13 @@ const MENU_ITEMS: MenuItem[] = [
   { label: 'Inventory',    icon: 'box',         action: 'tab',    target: 'Inventory'       },
   { label: 'Orders',       icon: 'pie-chart',   action: 'tab',    target: 'PurchaseOrders'  },
   { label: 'Performance',  icon: 'activity',    action: 'tab',    target: 'Performance'     },
-  { label: 'Profile',      icon: 'user',        action: 'screen', target: 'Profile'         },
 ];
 
 export default function CustomDrawerContent(props: any) {
-  const { colors } = useTheme();
-  const { authData } = useAuth();
+  const { colors, isDark } = useTheme();
+  const { authData, logout } = useAuth();
   const navigation = useNavigation<any>();
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   const getFirstName = () => {
     const ud = authData?.userDetails || {};
@@ -39,34 +38,49 @@ export default function CustomDrawerContent(props: any) {
     return ud?.email || ud?.loginEmail || '';
   };
 
-  // Figure out which tab is currently active to highlight the right item
   const activeRouteName: string = (() => {
     const state = props.state;
-    // state.routes[0] is MainTabs; its nested state has the active tab
     const mainTabsRoute = state?.routes?.find((r: any) => r.name === 'MainTabs');
     if (mainTabsRoute?.state) {
       const idx = mainTabsRoute.state.index ?? 0;
       return mainTabsRoute.state.routeNames?.[idx] || '';
     }
-    // Fallback: check direct routes (Profile screen)
     const active = state?.routes?.[state?.index ?? 0];
     return active?.name || '';
   })();
 
   const handleItemPress = (item: MenuItem) => {
     if (item.action === 'tab') {
-      // Navigate inside MainTabs: close drawer then jump to correct tab
       props.navigation.closeDrawer();
       props.navigation.navigate('MainTabs', { screen: item.target });
     } else {
-      // Navigate to a root Drawer screen (e.g. Profile)
       props.navigation.closeDrawer();
       props.navigation.navigate(item.target);
     }
   };
 
+  const handleLogoutPress = () => {
+    setShowLogoutModal(true);
+  };
+
+  const handleLogoutConfirm = async () => {
+    setShowLogoutModal(false);
+    props.navigation.closeDrawer();
+    await logout();
+    // Reset navigation stack and navigate to Login so user can't go back
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{ name: 'Login' }],
+      })
+    );
+  };
+
+  const handleLogoutCancel = () => {
+    setShowLogoutModal(false);
+  };
+
   const isActive = (item: MenuItem): boolean => {
-    if (item.action === 'screen') return activeRouteName === item.target;
     return activeRouteName === item.target;
   };
 
@@ -114,6 +128,84 @@ export default function CustomDrawerContent(props: any) {
           })}
         </View>
       </DrawerContentScrollView>
+
+      {/* ── Logout at Bottom ── */}
+      <View style={[styles.logoutSection, { borderTopColor: colors.border }]}>
+        <TouchableOpacity
+          onPress={handleLogoutPress}
+          activeOpacity={0.7}
+          style={styles.logoutButton}
+        >
+          <Feather name="log-out" size={ms(20)} color={colors.red} style={styles.menuIcon} />
+          <Text style={[styles.menuLabel, { color: colors.red, fontWeight: '600' }]}>Logout</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ── Modern Logout Confirmation Modal ── */}
+      <Modal
+        visible={showLogoutModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={handleLogoutCancel}
+        statusBarTranslucent
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: colors.card }]}>
+            {/* Icon */}
+            <View style={[styles.modalIconWrap, { backgroundColor: colors.redBg }]}>
+              <Feather name="log-out" size={ms(28)} color={colors.red} />
+            </View>
+
+            {/* Title */}
+            <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>
+              Logout
+            </Text>
+
+            {/* Message */}
+            <Text style={[styles.modalMessage, { color: colors.textSecondary }]}>
+              Are you sure you want to logout?
+            </Text>
+
+            {/* Divider */}
+            <View style={[styles.modalDivider, { backgroundColor: colors.border }]} />
+
+            {/* Buttons */}
+            <View style={styles.modalButtonRow}>
+              <TouchableOpacity
+                onPress={handleLogoutCancel}
+                activeOpacity={0.7}
+                style={[
+                  styles.modalButton,
+                  styles.modalButtonNo,
+                  {
+                    backgroundColor: isDark ? colors.cardAlt : colors.cardAlt,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Text style={[styles.modalButtonText, { color: colors.textPrimary }]}>
+                  No
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleLogoutConfirm}
+                activeOpacity={0.7}
+                style={[
+                  styles.modalButton,
+                  styles.modalButtonYes,
+                  { backgroundColor: colors.red },
+                ]}
+              >
+                <Feather name="check" size={ms(16)} color="#FFF" style={{ marginRight: wp(6) }} />
+                <Text style={[styles.modalButtonText, { color: '#FFF' }]}>
+                  Yes
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -177,5 +269,86 @@ const styles = StyleSheet.create({
     width: ms(6),
     height: ms(6),
     borderRadius: ms(3),
+  },
+  logoutSection: {
+    borderTopWidth: 1,
+    paddingVertical: hp(8),
+    paddingBottom: hp(32),
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: hp(14),
+    paddingHorizontal: wp(20),
+    marginHorizontal: wp(8),
+    borderRadius: ms(8),
+  },
+  // ── Modal Styles ──
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: wp(32),
+  },
+  modalCard: {
+    width: '100%',
+    borderRadius: ms(24),
+    paddingTop: hp(32),
+    paddingHorizontal: wp(24),
+    paddingBottom: hp(24),
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  modalIconWrap: {
+    width: ms(64),
+    height: ms(64),
+    borderRadius: ms(32),
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: hp(20),
+  },
+  modalTitle: {
+    fontSize: ms(20),
+    fontWeight: '800',
+    letterSpacing: -0.3,
+    marginBottom: hp(8),
+  },
+  modalMessage: {
+    fontSize: ms(15),
+    fontWeight: '500',
+    textAlign: 'center',
+    lineHeight: ms(22),
+    marginBottom: hp(24),
+  },
+  modalDivider: {
+    width: '100%',
+    height: StyleSheet.hairlineWidth,
+    marginBottom: hp(20),
+  },
+  modalButtonRow: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: wp(12),
+  },
+  modalButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: hp(14),
+    borderRadius: ms(14),
+  },
+  modalButtonNo: {
+    borderWidth: 1,
+  },
+  modalButtonYes: {},
+  modalButtonText: {
+    fontSize: ms(15),
+    fontWeight: '700',
   },
 });

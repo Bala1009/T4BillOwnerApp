@@ -92,7 +92,7 @@ function buildAreaPath(
 // ─── Main Dashboard ─────────────────────────────────────────
 export default function DashboardScreen() {
   const { authData } = useAuth();
-  const { colors } = useTheme();
+  const { colors, toggleTheme, isDark } = useTheme();
   // ── Global date filter (shared across all screens) ────────
   const { dateRange, activeFilter, startDate, endDate, setDateFilter } = useDateFilter();
 
@@ -182,7 +182,7 @@ export default function DashboardScreen() {
     <ScreenWrapper>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: wp(16), paddingBottom: hp(60), paddingTop: hp(8) }}
+        contentContainerStyle={{ paddingHorizontal: wp(16), paddingBottom: hp(60), paddingTop: hp(12) }}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
@@ -278,7 +278,7 @@ export default function DashboardScreen() {
 
 // ─── Header ─────────────────────────────────────────────────
 function Header({ onBranchSelected }: { onBranchSelected?: (branch: any) => void }) {
-  const { colors } = useTheme();
+  const { colors, toggleTheme, isDark } = useTheme();
   const { authData } = useAuth();
   const navigation = useNavigation<any>();
   const [branches, setBranches] = useState<any[]>([]);
@@ -371,6 +371,13 @@ function Header({ onBranchSelected }: { onBranchSelected?: (branch: any) => void
             />
           </>
         )}
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[s.headerIcon, { backgroundColor: colors.card }]}
+        onPress={toggleTheme}
+      >
+        <Feather name={isDark ? 'sun' : 'moon'} size={ms(22)} color={colors.textPrimary} />
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -850,28 +857,6 @@ function KPIGrid({ data, salesList, hourlyList }: { data: any; salesList?: any[]
       colorKey: profit >= 0 ? 'green' : 'red',
       bgKey: profit >= 0 ? 'greenBg' : 'redBg',
       sparkline: profit !== 0 ? sparks.profit : FLAT,
-    },
-    {
-      title: 'Cancel Bills',
-      value: `${cancelBills}`,
-      rawNum: cancelBills,
-      change: `${cancelRate}% rate`,
-      up: cancelBills === 0,
-      icon: 'trending-up',
-      colorKey: cancelBills === 0 ? 'green' : 'red',
-      bgKey: cancelBills === 0 ? 'greenBg' : 'redBg',
-      sparkline: cancelBills > 0 ? sparks.bills : FLAT,
-    },
-    {
-      title: 'Avg Order',
-      value: `₹${avgOrderValue.toLocaleString()}`,
-      rawNum: avgOrderValue,
-      change: `${totalBills} orders`,
-      up: true,
-      icon: 'shopping-bag',
-      colorKey: 'blue',
-      bgKey: 'blueBg',
-      sparkline: avgOrderValue > 0 ? sparks.revenue : FLAT,
     },
   ];
 
@@ -2088,9 +2073,9 @@ const s = StyleSheet.create({
   },
 
   // Greeting
-  greetingContainer: { marginTop: hp(12), marginBottom: hp(8) },
+  greetingContainer: { marginTop: hp(16), marginBottom: hp(12) },
   greetingTitle: { fontSize: ms(24), fontWeight: "700", letterSpacing: -0.3 },
-  greetingSubtitle: { fontSize: ms(14), marginTop: hp(4) },
+  greetingSubtitle: { fontSize: ms(14), marginTop: hp(6) },
 
   // (Date Filter styles are now inside CalendarPicker component)
 
@@ -2099,7 +2084,9 @@ const s = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
-    gap: wp(12),
+    gap: wp(14),
+    marginTop: hp(8),
+    marginBottom: hp(4),
   },
   kpiCardWidth: { width: "48%" },
   kpiTopRow: {
@@ -2109,7 +2096,7 @@ const s = StyleSheet.create({
     marginBottom: hp(10),
   },
   animatedKpiCard: {
-    padding: wp(14),
+    padding: wp(16),
     borderRadius: wp(20),
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },

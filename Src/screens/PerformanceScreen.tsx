@@ -319,10 +319,10 @@ export default function PerformanceScreen() {
       scoreLabel: totalBills > 0 ? `${totalBills} total bills` : 'No data',
       scoreColor: colors.green,
       metrics: [
-        { id: '1', title: 'Revenue', icon: 'trending-up', value: `₹${(todayPayments / 1000).toFixed(1)}K`, progress: Math.min(100, todayPayments > 0 ? 80 : 0), color: colors.orange, bg: colors.orangeBg },
-        { id: '2', title: 'Unique Items', icon: 'grid', value: `${uniqueItems}`, progress: Math.min(100, uniqueItems > 0 ? 75 : 0), color: colors.green, bg: colors.greenBg },
-        { id: '3', title: 'Avg Order Val', icon: 'dollar-sign', value: `₹${avgOrderValue}`, progress: Math.min(100, avgOrderValue > 0 ? 70 : 0), color: colors.blue, bg: colors.blueBg },
-        { id: '4', title: 'Total Bills', icon: 'file-text', value: `${totalBills}`, progress: Math.min(100, totalBills > 0 ? 85 : 0), color: colors.purple, bg: colors.purpleBg },
+        { id: '1', title: 'Revenue', icon: 'trending-up', value: `₹${(todayPayments / 1000).toFixed(1)}K`, progress: Math.min(100, todayPayments > 0 && totalRevenue > 0 ? Math.round((todayPayments / (todayPayments + todayExpenses || 1)) * 100) : 0), color: colors.orange, bg: colors.orangeBg },
+        { id: '2', title: 'Unique Items', icon: 'grid', value: `${uniqueItems}`, progress: Math.min(100, uniqueItems > 0 ? Math.round((uniqueItems / Math.max(uniqueItems, 20)) * 100) : 0), color: colors.green, bg: colors.greenBg },
+        { id: '3', title: 'Avg Order Val', icon: 'dollar-sign', value: `₹${avgOrderValue}`, progress: Math.min(100, avgOrderValue > 0 && todayPayments > 0 ? Math.round((avgOrderValue / (todayPayments / Math.max(totalBills, 1))) * 50) : 0), color: colors.blue, bg: colors.blueBg },
+        { id: '4', title: 'Total Bills', icon: 'file-text', value: `${totalBills}`, progress: Math.min(100, totalBills > 0 ? Math.round(((totalBills - cancelBills) / Math.max(totalBills, 1)) * 100) : 0), color: colors.purple, bg: colors.purpleBg },
       ],
       performersList: sortedByCount,
       maxPerformerVal: maxCount,
@@ -330,9 +330,10 @@ export default function PerformanceScreen() {
       getPerformerStats: (item) => `${item.count} orders • ₹${(item.totalPrice || 0).toLocaleString()}`,
       areaTitle: 'Revenue Breakdown',
       areas: [
-        { id: '1', label: 'Retail Orders', color: colors.green, current: `₹${retailAmt.toLocaleString()}`, target: 'Maximize', progress: Math.min(100, Math.round((retailAmt / totalBreakdown) * 100)) },
-        { id: '2', label: 'Cancellations', color: colors.red, current: `₹${cancelledAmt.toLocaleString()}`, target: 'Minimize', progress: Math.min(100, Math.round((cancelledAmt / totalBreakdown) * 100)) },
-        { id: '3', label: 'Complimentary', color: colors.orange, current: `₹${compAmt.toLocaleString()}`, target: 'Manage', progress: Math.min(100, Math.round((compAmt / totalBreakdown) * 100)) },
+        { id: '1', label: 'Retail Orders', color: colors.green, current: `₹${retailAmt.toLocaleString()}`, target: `${totalBreakdown > 1 ? Math.round((retailAmt / totalBreakdown) * 100) : 0}%`, progress: Math.min(100, Math.round((retailAmt / totalBreakdown) * 100)) },
+        { id: '2', label: 'Cancellations', color: colors.red, current: `₹${cancelledAmt.toLocaleString()}`, target: `${totalBreakdown > 1 ? Math.round((cancelledAmt / totalBreakdown) * 100) : 0}%`, progress: Math.min(100, Math.round((cancelledAmt / totalBreakdown) * 100)) },
+        { id: '3', label: 'Complimentary', color: colors.orange, current: `₹${compAmt.toLocaleString()}`, target: `${totalBreakdown > 1 ? Math.round((compAmt / totalBreakdown) * 100) : 0}%`, progress: Math.min(100, Math.round((compAmt / totalBreakdown) * 100)) },
+        { id: '4', label: 'Expenses', color: colors.purple, current: `₹${todayExpenses.toLocaleString()}`, target: todayPayments > 0 ? `${Math.round((todayExpenses / todayPayments) * 100)}%` : '0%', progress: Math.min(100, todayPayments > 0 ? Math.round((todayExpenses / todayPayments) * 100) : 0) },
       ],
     },
 
@@ -363,7 +364,7 @@ export default function PerformanceScreen() {
       scoreLabel: `${totalBills - cancelBills} fulfilled`,
       scoreColor: colors.blue,
       metrics: [
-        { id: '1', title: 'Total Orders', icon: 'file-text', value: `${totalBills}`, progress: Math.min(100, totalBills > 0 ? 85 : 0), color: colors.blue, bg: colors.blueBg },
+        { id: '1', title: 'Total Orders', icon: 'file-text', value: `${totalBills}`, progress: Math.min(100, totalBills > 0 ? Math.round(((totalBills - cancelBills) / Math.max(totalBills, 1)) * 100) : 0), color: colors.blue, bg: colors.blueBg },
         { id: '2', title: 'Fulfilled', icon: 'check-circle', value: `${Math.max(0, totalBills - cancelBills)}`, progress: Math.min(100, totalBills > 0 ? Math.round(((totalBills - cancelBills) / totalBills) * 100) : 0), color: colors.green, bg: colors.greenBg },
         { id: '3', title: 'Cancelled', icon: 'x-circle', value: `${cancelBills}`, progress: Math.min(100, totalBills > 0 ? Math.round((cancelBills / totalBills) * 100) : 0), color: colors.red, bg: colors.redBg },
         { id: '4', title: 'Modified Bills', icon: 'edit-2', value: `${modifiedBills}`, progress: Math.min(100, totalBills > 0 ? Math.round((modifiedBills / totalBills) * 100) : 0), color: colors.orange, bg: colors.orangeBg },
@@ -502,20 +503,48 @@ export default function PerformanceScreen() {
     const trendSource = trendSalesData || salesData;
     const rawList: any[] = trendSource?.dashBoardSalesList || [];
     const data = rawList.length > 1 ? rawList.map((d: any) => d.paidAmount || 0) : [0, 0, 0, 0, 0, 0, 0];
+
+    // Build human-readable X-axis labels
     const labels = rawList.length > 1
-      ? rawList.map((d: any) => {
-          if (!d.hours) return '';
-          const sv = (d.hours || '').toString().toLowerCase();
-          const map: Record<string, string> = { sunday: 'Sun', monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed', thursday: 'Thu', friday: 'Fri', saturday: 'Sat', ret: 'Retail', can: 'Canc', com: 'Comp' };
-          return map[sv] || sv.substring(0, 3);
+      ? rawList.map((d: any, idx: number) => {
+          if (!d.hours) return `Day ${idx + 1}`;
+          const raw = (d.hours || '').toString().trim();
+          const lower = raw.toLowerCase();
+
+          // Day names → full short names
+          const dayMap: Record<string, string> = {
+            sunday: 'Sun', monday: 'Mon', tuesday: 'Tue', wednesday: 'Wed',
+            thursday: 'Thu', friday: 'Fri', saturday: 'Sat',
+          };
+          if (dayMap[lower]) return dayMap[lower];
+
+          // Order type codes → readable names
+          const typeMap: Record<string, string> = {
+            ret: 'Retail', can: 'Cancelled', com: 'Complimentary', tot: 'Total',
+          };
+          if (typeMap[lower]) return typeMap[lower];
+
+          // Numeric hour → 12h format (e.g. "14" → "2 PM")
+          const numMatch = raw.match(/^(\d+)/);
+          if (numMatch) {
+            const h = parseInt(numMatch[1], 10);
+            if (!isNaN(h) && h >= 0 && h <= 24) {
+              const ampm = h >= 12 && h < 24 ? 'PM' : 'AM';
+              return `${h % 12 || 12} ${ampm}`;
+            }
+          }
+
+          // Fallback for any other string — capitalize first 3 chars
+          return raw.length > 6 ? raw.substring(0, 6) : raw;
         })
       : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-    const leftPad = ms(45);
-    const rightPad = ms(12);
-    const topPad = ms(14);
-    const bottomPad = ms(26);
-    const chartHeight = ms(210);
+    // ── Chart dimensions with generous breathing space ──
+    const leftPad = ms(48);
+    const rightPad = ms(16);
+    const topPad = ms(20);
+    const bottomPad = ms(32);
+    const chartHeight = ms(240);
     const chartWidth = scrWidth - wp(64);
     const maxVal = Math.max(...data, 1);
     const range = maxVal || 1;
@@ -578,7 +607,7 @@ export default function PerformanceScreen() {
             )}
           </View>
         </View>
-        <View style={[s.card, { backgroundColor: colors.card, shadowColor: colors.shadow }]}>
+        <View style={[s.card, { backgroundColor: colors.card, shadowColor: colors.shadow, marginTop: hp(4), paddingTop: hp(16), paddingBottom: hp(12) }]}>
           {trendLoading ? (
             <View style={{ height: chartHeight, justifyContent: 'center', alignItems: 'center' }}>
               <ActivityIndicator size="small" color={colors.primary} />
@@ -614,7 +643,7 @@ export default function PerformanceScreen() {
                     <SvgText
                       x={leftPad - ms(6)}
                       y={y + ms(4)}
-                      fontSize={ms(9)}
+                      fontSize={ms(10)}
                       fill={colors.textTertiary}
                       textAnchor="end"
                     >
@@ -637,7 +666,7 @@ export default function PerformanceScreen() {
                     <Circle cx={x} cy={y} r="5" fill={colors.card} stroke={colors.orange} strokeWidth="2" />
                     <Circle cx={x} cy={y} r="2" fill={colors.orange} />
                     {showLabel && (
-                      <SvgText x={x} y={chartHeight - ms(4)} fontSize={ms(9)} fontWeight="600" fill={colors.textSecondary} textAnchor="middle">
+                      <SvgText x={x} y={chartHeight - ms(6)} fontSize={ms(10)} fontWeight="600" fill={colors.textSecondary} textAnchor="middle">
                         {labels[i]}
                       </SvgText>
                     )}
@@ -695,6 +724,21 @@ export default function PerformanceScreen() {
 
   const renderAreas = () => {
     const { areas, areaTitle } = chipData;
+    const hasAreaData = areas.some(a => a.progress > 0 || a.current !== '₹0');
+
+    if (!hasAreaData) {
+      return (
+        <View style={s.section}>
+          <Text style={[s.sectionTitle, { color: colors.textPrimary }]}>{areaTitle}</Text>
+          <View style={[s.card, { backgroundColor: colors.card, shadowColor: colors.shadow, alignItems: 'center', paddingVertical: hp(32) }]}>
+            <Feather name="pie-chart" size={ms(36)} color={colors.textTertiary} style={{ marginBottom: hp(12), opacity: 0.4 }} />
+            <Text style={{ color: colors.textSecondary, fontSize: ms(14), fontWeight: '500' }}>No revenue data available</Text>
+            <Text style={{ color: colors.textTertiary, fontSize: ms(12), marginTop: hp(4) }}>Data will appear when orders are placed</Text>
+          </View>
+        </View>
+      );
+    }
+
     return (
       <View style={s.section}>
         <Text style={[s.sectionTitle, { color: colors.textPrimary }]}>{areaTitle}</Text>
@@ -705,7 +749,7 @@ export default function PerformanceScreen() {
                 <Text style={[s.areaLabel, { color: colors.textPrimary }]}>{item.label}</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: wp(4) }}>
                   <Text style={[s.areaValues, { color: item.color }]}>{item.current}</Text>
-                  <Text style={[s.areaValues, { color: colors.textSecondary }]}>→ {item.target}</Text>
+                  <Text style={[s.areaValues, { color: colors.textSecondary }]}>• {item.target}</Text>
                 </View>
               </View>
               <View style={[s.areaTrack, { backgroundColor: colors.bg }]}>
@@ -771,7 +815,7 @@ export default function PerformanceScreen() {
 const s = StyleSheet.create({
   loadingBox: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
   loadingText: { fontSize: ms(14) },
-  contentPad: { paddingTop: hp(8), paddingBottom: hp(60) },
+  contentPad: { paddingTop: hp(12), paddingBottom: hp(60) },
 
   /* Chips */
   chipsContainer: { marginBottom: hp(4) },

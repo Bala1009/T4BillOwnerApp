@@ -8,7 +8,7 @@ interface CardProps {
     style?: StyleProp<ViewStyle>;
     /** Remove default top margin. Default: false */
     noMargin?: boolean;
-    /** Custom padding. Default: 20 */
+    /** Custom padding. Default: 16 */
     padding?: number;
 }
 
@@ -20,7 +20,7 @@ export default function Card({
     children,
     style,
     noMargin = false,
-    padding = 20,
+    padding = 16,
 }: CardProps) {
     const { colors } = useTheme();
 
@@ -45,7 +45,7 @@ export default function Card({
 const styles = StyleSheet.create({
     card: {
         borderRadius: wp(20),
-        marginTop: hp(20),
+        marginTop: hp(24),
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.02,

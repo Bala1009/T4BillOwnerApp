@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "T4BillOwnerApp",
-    "slug": "T4BillOwnerApp",
+    "slug": "ownerapp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./Src/assets/images/app-icon.png",
@@ -14,12 +14,13 @@
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "foregroundImage": "./Src/assets/images/app-icon.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "monochromeImage": "./Src/assets/images/app-icon.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.touch4bill.ownerapp"
     },
     "web": {
       "output": "static",
@@ -44,6 +45,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "dafc54a4-c437-4ea4-96ac-2ee6f23be5bd"
+      }
+    },
+    "owner": "t4bill2025"
   }
 }
