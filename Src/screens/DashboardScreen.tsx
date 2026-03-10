@@ -1,7 +1,10 @@
 import { Feather, Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useCallback, useState, useEffect, useRef } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useNavigation } from "@react-navigation/native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  DeviceEventEmitter,
   FlatList,
   Modal,
   Pressable,
@@ -12,10 +15,7 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
-  DeviceEventEmitter,
 } from "react-native";
-import { useNavigation } from "@react-navigation/native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -26,26 +26,23 @@ import Svg, {
   Circle,
   Defs,
   G,
-  Line,
   LinearGradient,
   Path,
   Stop,
   Text as SvgText,
 } from "react-native-svg";
+import { getBranchMaster } from "../api/branchService";
+import { getSalesDetails } from "../api/dashboardService";
 import {
   CalendarPicker,
   Card,
   ScreenWrapper,
   SectionHeader,
 } from "../components";
-import type { DateRange, QuickFilter } from "../components";
-import type { ThemeColors } from "../theme";
-import { hp, ms, useTheme, wp } from "../theme";
-import axiosInstance from "../api/axiosInstance";
-import { getBranchMaster } from "../api/branchService";
-import { getSalesDetails } from "../api/dashboardService";
 import { useAuth } from "../context/AuthContext";
 import { useDateFilter } from "../context/DateFilterContext";
+import type { ThemeColors } from "../theme";
+import { hp, ms, useTheme, wp } from "../theme";
 
 // ─── Dummy Data Removed ─────────────────────────────────────
 
@@ -69,7 +66,7 @@ function buildAreaPath(
   const points = data.map((v, i) => ({
     x: padding + i * stepX,
     y: allZero
-      ? height - padding          // flat line at the bottom
+      ? height - padding // flat line at the bottom
       : padding + (1 - (v - minVal) / (range || 1)) * (height - padding * 2),
   }));
 
@@ -94,7 +91,8 @@ export default function DashboardScreen() {
   const { authData } = useAuth();
   const { colors, toggleTheme, isDark } = useTheme();
   // ── Global date filter (shared across all screens) ────────
-  const { dateRange, activeFilter, startDate, endDate, setDateFilter } = useDateFilter();
+  const { dateRange, activeFilter, startDate, endDate, setDateFilter } =
+    useDateFilter();
 
   const [selectedBranch, setSelectedBranch] = useState<any | null>(null);
   const [dashboardData, setDashboardData] = useState<any | null>(null);
@@ -105,9 +103,7 @@ export default function DashboardScreen() {
   const fetchDashboardData = useCallback(async () => {
     if (!authData?.ClientID || !selectedBranch) return;
 
-
-
-    const branchIdNum = 
+    const branchIdNum =
       selectedBranch?.BranchID ||
       selectedBranch?.branchID ||
       selectedBranch?.BranchId ||
@@ -122,8 +118,8 @@ export default function DashboardScreen() {
       selectedBranch?.VendorId ||
       selectedBranch?.vendorId ||
       0;
-      
-    const isActive = 
+
+    const isActive =
       selectedBranch?.IsActive || selectedBranch?.isActive ? true : false;
 
     const phaseValue = selectedBranch?.Phase || selectedBranch?.phase || null;
@@ -132,24 +128,32 @@ export default function DashboardScreen() {
       startDate,
       endDate,
       branchID: branchIdNum,
-      clientID: Number(authData?.ClientID)
+      clientID: Number(authData?.ClientID),
     };
-    
+
     if (phaseValue !== null && phaseValue !== "") payload.phase = phaseValue;
     if (isActive) payload.isActive = isActive;
     if (vendorIdNum) payload.vendorID = vendorIdNum;
 
-    console.log("[DashboardScreen] Request Payload:", JSON.stringify(payload, null, 2));
+    console.log(
+      "[DashboardScreen] Request Payload:",
+      JSON.stringify(payload, null, 2),
+    );
 
     try {
       if (!isRefreshing) setIsLoading(true);
       setErrorMsg(null);
       const dbData = await getSalesDetails(payload);
-      console.log("[DashboardScreen] Dashboard Data received:", JSON.stringify(dbData, null, 2));
+      console.log(
+        "[DashboardScreen] Dashboard Data received:",
+        JSON.stringify(dbData, null, 2),
+      );
       setDashboardData(dbData);
     } catch (error: any) {
       console.error("[DashboardScreen] Fetch Data Error:", error);
-      setErrorMsg("Failed to load dashboard data. Please check your network connection and try again.");
+      setErrorMsg(
+        "Failed to load dashboard data. Please check your network connection and try again.",
+      );
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -164,25 +168,46 @@ export default function DashboardScreen() {
 
   // Ensure arrays are typed consistently for ItemRankingSection
   const itemWiseSales = dashboardData?.dashBoardItemWiseSalesList || [];
-  
-  const mapItemToList = (items: any[], isQtyFirst: boolean) => 
+
+  const mapItemToList = (items: any[], isQtyFirst: boolean) =>
     items.map((it: any) => ({
       name: it.productDescription || "Unknown",
-      primary: isQtyFirst ? `${it.count}` : `₹${it.totalPrice?.toLocaleString() || 0}`,
-      secondary: isQtyFirst ? `₹${it.totalPrice?.toLocaleString() || 0}` : `${it.count} qty`,
-      pct: items.length > 0 && items[0] ? (isQtyFirst ? (it.count / Math.max(items[0].count, 1)) : (it.totalPrice / Math.max(items[0].totalPrice, 1))) : 0,
+      primary: isQtyFirst
+        ? `${it.count}`
+        : `₹${it.totalPrice?.toLocaleString() || 0}`,
+      secondary: isQtyFirst
+        ? `₹${it.totalPrice?.toLocaleString() || 0}`
+        : `${it.count} qty`,
+      pct:
+        items.length > 0 && items[0]
+          ? isQtyFirst
+            ? it.count / Math.max(items[0].count, 1)
+            : it.totalPrice / Math.max(items[0].totalPrice, 1)
+          : 0,
     }));
 
-  const topBySalesRaw = [...itemWiseSales].sort((a, b) => (b.totalPrice || 0) - (a.totalPrice || 0));
-  const topByQtyRaw = [...itemWiseSales].sort((a, b) => (b.count || 0) - (a.count || 0));
-  const lowBySalesRaw = [...itemWiseSales].sort((a, b) => (a.totalPrice || 0) - (b.totalPrice || 0));
-  const lowByQtyRaw = [...itemWiseSales].sort((a, b) => (a.count || 0) - (b.count || 0));
+  const topBySalesRaw = [...itemWiseSales].sort(
+    (a, b) => (b.totalPrice || 0) - (a.totalPrice || 0),
+  );
+  const topByQtyRaw = [...itemWiseSales].sort(
+    (a, b) => (b.count || 0) - (a.count || 0),
+  );
+  const lowBySalesRaw = [...itemWiseSales].sort(
+    (a, b) => (a.totalPrice || 0) - (b.totalPrice || 0),
+  );
+  const lowByQtyRaw = [...itemWiseSales].sort(
+    (a, b) => (a.count || 0) - (b.count || 0),
+  );
 
   return (
     <ScreenWrapper>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: wp(16), paddingBottom: hp(60), paddingTop: hp(12) }}
+        contentContainerStyle={{
+          paddingHorizontal: wp(16),
+          paddingBottom: hp(60),
+          paddingTop: hp(12),
+        }}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
@@ -203,21 +228,40 @@ export default function DashboardScreen() {
           onDateRangeChange={setDateFilter}
         />
         {isLoading ? (
-          <View style={{ padding: hp(40), alignItems: 'center' }}>
+          <View style={{ padding: hp(40), alignItems: "center" }}>
             <ActivityIndicator size="large" color={colors.primary} />
-            <Text style={{ marginTop: hp(12), color: colors.textSecondary }}>Fetching dashboard data...</Text>
+            <Text style={{ marginTop: hp(12), color: colors.textSecondary }}>
+              Fetching dashboard data...
+            </Text>
           </View>
         ) : errorMsg ? (
-          <View style={{ padding: hp(40), alignItems: 'center' }}>
-            <Feather name="alert-circle" size={ms(48)} color={colors.red} style={{ marginBottom: hp(16) }} />
-            <Text style={{ textAlign: 'center', color: colors.textPrimary, fontSize: ms(16), marginBottom: hp(24) }}>
+          <View style={{ padding: hp(40), alignItems: "center" }}>
+            <Feather
+              name="alert-circle"
+              size={ms(48)}
+              color={colors.red}
+              style={{ marginBottom: hp(16) }}
+            />
+            <Text
+              style={{
+                textAlign: "center",
+                color: colors.textPrimary,
+                fontSize: ms(16),
+                marginBottom: hp(24),
+              }}
+            >
               {errorMsg}
             </Text>
-            <TouchableOpacity 
-              style={{ backgroundColor: colors.primary, paddingHorizontal: wp(24), paddingVertical: hp(12), borderRadius: ms(8) }}
+            <TouchableOpacity
+              style={{
+                backgroundColor: colors.primary,
+                paddingHorizontal: wp(24),
+                paddingVertical: hp(12),
+                borderRadius: ms(8),
+              }}
               onPress={fetchDashboardData}
             >
-              <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Retry</Text>
+              <Text style={{ color: "#FFF", fontWeight: "bold" }}>Retry</Text>
             </TouchableOpacity>
           </View>
         ) : dashboardData ? (
@@ -227,9 +271,9 @@ export default function DashboardScreen() {
               salesList={dashboardData.dashBoardSalesList || []}
               hourlyList={dashboardData.dashBoardHourlyList || []}
             />
-            <SalesChartSection 
-              salesData={dashboardData.dashBoardSalesList} 
-              hourlyData={dashboardData.dashBoardHourlyList} 
+            <SalesChartSection
+              salesData={dashboardData.dashBoardSalesList}
+              hourlyData={dashboardData.dashBoardHourlyList}
             />
             <PaymentDonutSection data={dashboardData.paymentSplitupList} />
             <RevenueLeakage data={dashboardData.dashBoardCount} />
@@ -277,7 +321,11 @@ export default function DashboardScreen() {
 }
 
 // ─── Header ─────────────────────────────────────────────────
-function Header({ onBranchSelected }: { onBranchSelected?: (branch: any) => void }) {
+function Header({
+  onBranchSelected,
+}: {
+  onBranchSelected?: (branch: any) => void;
+}) {
   const { colors, toggleTheme, isDark } = useTheme();
   const { authData } = useAuth();
   const navigation = useNavigation<any>();
@@ -314,8 +362,11 @@ function Header({ onBranchSelected }: { onBranchSelected?: (branch: any) => void
       if (branchList.length > 0) {
         setSelectedBranch(branchList[0]);
         if (onBranchSelected) onBranchSelected(branchList[0]);
-        await AsyncStorage.setItem('selectedBranch', JSON.stringify(branchList[0]));
-        DeviceEventEmitter.emit('BRANCH_CHANGED', branchList[0]);
+        await AsyncStorage.setItem(
+          "selectedBranch",
+          JSON.stringify(branchList[0]),
+        );
+        DeviceEventEmitter.emit("BRANCH_CHANGED", branchList[0]);
       }
     } catch (error) {
       console.error("[Dashboard] Error fetching branches:", error);
@@ -328,8 +379,8 @@ function Header({ onBranchSelected }: { onBranchSelected?: (branch: any) => void
     console.log("[Dashboard] Selected branch:", branch);
     setSelectedBranch(branch);
     if (onBranchSelected) onBranchSelected(branch);
-    await AsyncStorage.setItem('selectedBranch', JSON.stringify(branch));
-    DeviceEventEmitter.emit('BRANCH_CHANGED', branch);
+    await AsyncStorage.setItem("selectedBranch", JSON.stringify(branch));
+    DeviceEventEmitter.emit("BRANCH_CHANGED", branch);
     setDropdownVisible(false);
   };
 
@@ -373,22 +424,28 @@ function Header({ onBranchSelected }: { onBranchSelected?: (branch: any) => void
         )}
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={[s.headerIcon, { backgroundColor: colors.card }]}
-        onPress={toggleTheme}
-      >
-        <Feather name={isDark ? 'sun' : 'moon'} size={ms(22)} color={colors.textPrimary} />
-      </TouchableOpacity>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: wp(10) }}>
+        <TouchableOpacity
+          style={[s.headerIcon, { backgroundColor: colors.card }]}
+          onPress={toggleTheme}
+        >
+          <Feather
+            name={isDark ? "sun" : "moon"}
+            size={ms(22)}
+            color={colors.textPrimary}
+          />
+        </TouchableOpacity>
 
-      <TouchableOpacity
-        style={[s.headerIcon, { backgroundColor: colors.card }]}
-        onPress={() => navigation.navigate('Notifications')}
-      >
-        <View>
-          <Feather name="bell" size={ms(22)} color={colors.textPrimary} />
-          <View style={[s.notifDot, { backgroundColor: colors.accent }]} />
-        </View>
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={[s.headerIcon, { backgroundColor: colors.card }]}
+          onPress={() => navigation.navigate("Notifications")}
+        >
+          <View>
+            <Feather name="bell" size={ms(22)} color={colors.textPrimary} />
+            <View style={[s.notifDot, { backgroundColor: colors.accent }]} />
+          </View>
+        </TouchableOpacity>
+      </View>
 
       {/* Branch Dropdown Modal */}
       <Modal
@@ -435,13 +492,23 @@ function Header({ onBranchSelected }: { onBranchSelected?: (branch: any) => void
                     showsVerticalScrollIndicator={false}
                     renderItem={({ item }) => {
                       const isSelected =
-                        (selectedBranch?.BranchID && item?.BranchID && selectedBranch.BranchID === item.BranchID) ||
-                        (selectedBranch?.branchID && item?.branchID && selectedBranch.branchID === item.branchID) ||
-                        (selectedBranch?.BranchId && item?.BranchId && selectedBranch.BranchId === item.BranchId) ||
-                        (selectedBranch?.branchId && item?.branchId && selectedBranch.branchId === item.branchId) ||
-                        (selectedBranch?.id && item?.id && selectedBranch.id === item.id) ||
+                        (selectedBranch?.BranchID &&
+                          item?.BranchID &&
+                          selectedBranch.BranchID === item.BranchID) ||
+                        (selectedBranch?.branchID &&
+                          item?.branchID &&
+                          selectedBranch.branchID === item.branchID) ||
+                        (selectedBranch?.BranchId &&
+                          item?.BranchId &&
+                          selectedBranch.BranchId === item.BranchId) ||
+                        (selectedBranch?.branchId &&
+                          item?.branchId &&
+                          selectedBranch.branchId === item.branchId) ||
+                        (selectedBranch?.id &&
+                          item?.id &&
+                          selectedBranch.id === item.id) ||
                         selectedBranch === item;
-                      
+
                       return (
                         <TouchableOpacity
                           style={[
@@ -495,24 +562,28 @@ function Greeting() {
   const getGreetingMessage = () => {
     const currentHour = new Date().getHours();
     if (currentHour >= 5 && currentHour < 12) {
-      return 'Good Morning';
+      return "Good Morning";
     } else if (currentHour >= 12 && currentHour < 17) {
-      return 'Good Afternoon';
+      return "Good Afternoon";
     } else if (currentHour >= 17 && currentHour < 22) {
-      return 'Good Evening';
+      return "Good Evening";
     } else {
-      return 'Good Night';
+      return "Good Night";
     }
   };
 
   const getFirstName = () => {
     const userDetails = authData?.userDetails || {};
     // Check login API response for userName or name. If not available, fallback to username entered during login
-    const mappedName = userDetails?.userName || userDetails?.name || userDetails?.loginUserName || "";
-    
+    const mappedName =
+      userDetails?.userName ||
+      userDetails?.name ||
+      userDetails?.loginUserName ||
+      "";
+
     // Ensure the value is not empty before displaying
     if (!mappedName) return "User";
-    
+
     // Capitalize the first letter just in case it's completely lowercase (optional but nice)
     return mappedName.charAt(0).toUpperCase() + mappedName.slice(1);
   };
@@ -523,7 +594,7 @@ function Greeting() {
         {getGreetingMessage()}, {getFirstName()}
       </Text>
       <Text style={[s.greetingSubtitle, { color: colors.textSecondary }]}>
-        Here's your business overview
+        Business insights for today
       </Text>
     </View>
   );
@@ -543,20 +614,20 @@ function SparklineMini({
 }) {
   const w = wp(width);
   const h = hp(height);
-  const gradId = `spark_${color.replace('#', '')}`;
+  const gradId = `spark_${color.replace("#", "")}`;
 
   // Check whether there is any meaningful data to plot
-  const hasValues = data.some(v => v !== 0);
+  const hasValues = data.some((v) => v !== 0);
 
   // Compute the full path immediately
   const { linePath, areaPath } = buildAreaPath(data, w, h);
 
   // Use RN Animated to animate the stroke-dashoffset from full length → 0
   // giving a "drawing" effect whenever data changes
-  const { Animated: RNAnimated } = require('react-native');
+  const { Animated: RNAnimated } = require("react-native");
   const progress = useRef(new RNAnimated.Value(0)).current;
   // Re-run animation whenever data identity changes (key array joined)
-  const dataKey = data.join(',');
+  const dataKey = data.join(",");
   useEffect(() => {
     progress.setValue(0);
     RNAnimated.timing(progress, {
@@ -575,7 +646,7 @@ function SparklineMini({
 
   // We render the area (static) + animated line overlay
   const AnimatedNativePath = RNAnimated.createAnimatedComponent(
-    require('react-native-svg').Path
+    require("react-native-svg").Path,
   );
 
   // When all values are 0, render a subtle flat dashed line (no area fill)
@@ -622,48 +693,67 @@ function SparklineMini({
 type KPIDataType = {
   title: string;
   value: string;
-  rawNum: number;          // raw number for animated counter
+  rawNum: number; // raw number for animated counter
   change: string;
   up: boolean;
-  icon: 'trending-up' | 'shopping-bag' | 'credit-card' | 'dollar-sign' | 'arrow-up-right' | 'arrow-down-right';
-  colorKey: 'green' | 'blue' | 'red' | 'orange';
-  bgKey: 'greenBg' | 'blueBg' | 'redBg' | 'orangeBg';
+  icon:
+    | "trending-up"
+    | "shopping-bag"
+    | "credit-card"
+    | "dollar-sign"
+    | "arrow-up-right"
+    | "arrow-down-right";
+  colorKey: "green" | "blue" | "red" | "orange";
+  bgKey: "greenBg" | "blueBg" | "redBg" | "orangeBg";
   sparkline: number[];
 };
 
 // ─── Animated KPI value counter ─────────────────────────────
-function AnimatedKPIValue({ rawNum, prefix = '', suffix = '', style }: { rawNum: number; prefix?: string; suffix?: string; style: any }) {
-  const { Animated: RNAnimated } = require('react-native');
+function AnimatedKPIValue({
+  rawNum,
+  prefix = "",
+  suffix = "",
+  style,
+}: {
+  rawNum: number;
+  prefix?: string;
+  suffix?: string;
+  style: any;
+}) {
+  const { Animated: RNAnimated } = require("react-native");
   const anim = useRef(new RNAnimated.Value(0)).current;
   const [display, setDisplay] = useState(0);
 
   useEffect(() => {
     anim.setValue(0);
-    RNAnimated.timing(anim, { toValue: rawNum, duration: 900, useNativeDriver: false }).start();
-    const id = anim.addListener(({ value }: { value: number }) => setDisplay(Math.round(value)));
+    RNAnimated.timing(anim, {
+      toValue: rawNum,
+      duration: 900,
+      useNativeDriver: false,
+    }).start();
+    const id = anim.addListener(({ value }: { value: number }) =>
+      setDisplay(Math.round(value)),
+    );
     return () => anim.removeListener(id);
   }, [rawNum]);
 
-  const formatted = display >= 1000
-    ? display >= 100000
-      ? `${(display / 100000).toFixed(1)}L`
-      : `${(display / 1000).toFixed(1)}K`
-    : `${display}`;
+  const formatted =
+    display >= 1000
+      ? display >= 100000
+        ? `${(display / 100000).toFixed(1)}L`
+        : `${(display / 1000).toFixed(1)}K`
+      : `${display}`;
 
   return (
     <Text style={style} numberOfLines={1} adjustsFontSizeToFit>
-      {prefix}{formatted}{suffix}
+      {prefix}
+      {formatted}
+      {suffix}
     </Text>
   );
 }
 
-function AnimatedKPICard({
-  item,
-  colors,
-}: {
-  item: KPIDataType;
-  colors: any;
-}) {
+function AnimatedKPICard({ item, colors }: { item: KPIDataType; colors: any }) {
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => {
@@ -674,7 +764,7 @@ function AnimatedKPICard({
 
   // Parse the raw numeric value from the item for counting animation
   const rawNum = item.rawNum ?? 0;
-  const isRupee = item.value.startsWith('₹');
+  const isRupee = item.value.startsWith("₹");
 
   return (
     <Animated.View style={[s.kpiCardWidth, animatedStyle]}>
@@ -705,7 +795,7 @@ function AnimatedKPICard({
             ]}
           >
             <Feather
-              name={item.up ? 'arrow-up-right' : 'arrow-down-right'}
+              name={item.up ? "arrow-up-right" : "arrow-down-right"}
               size={ms(12)}
               color={item.up ? colors.green : colors.red}
             />
@@ -728,7 +818,7 @@ function AnimatedKPICard({
             </Text>
             <AnimatedKPIValue
               rawNum={rawNum}
-              prefix={isRupee ? '₹' : ''}
+              prefix={isRupee ? "₹" : ""}
               style={[s.kpiValue, { color: colors.textPrimary }]}
             />
           </View>
@@ -750,18 +840,32 @@ function AnimatedKPICard({
 // ─── Helpers for building per-metric sparklines ─────────────────
 function buildSparklines(salesList: any[], hourlyList: any[]) {
   // Prefer daily sales list; fall back to hourly if daily is empty
-  const source = salesList?.length >= 2 ? salesList : (hourlyList?.length >= 2 ? hourlyList : []);
+  const source =
+    salesList?.length >= 2
+      ? salesList
+      : hourlyList?.length >= 2
+        ? hourlyList
+        : [];
 
   if (source.length < 2) {
     // Not enough points — return a flat line at zero (no misleading trend)
-    return { revenue: [0, 0, 0], bills: [0, 0, 0], expenses: [0, 0, 0], profit: [0, 0, 0] };
+    return {
+      revenue: [0, 0, 0],
+      bills: [0, 0, 0],
+      expenses: [0, 0, 0],
+      profit: [0, 0, 0],
+    };
   }
 
-  const revenue  = source.map((d: any) => Math.max(0, d.paidAmount     || 0));
-  const bills    = source.map((d: any) => Math.max(0, d.billCount       || d.totalBills || 0));
-  const expenses = source.map((d: any) => Math.max(0, d.expenseAmount   || d.expense    || 0));
-  const profit   = source.map((d: any) => {
-    const r = d.paidAmount   || 0;
+  const revenue = source.map((d: any) => Math.max(0, d.paidAmount || 0));
+  const bills = source.map((d: any) =>
+    Math.max(0, d.billCount || d.totalBills || 0),
+  );
+  const expenses = source.map((d: any) =>
+    Math.max(0, d.expenseAmount || d.expense || 0),
+  );
+  const profit = source.map((d: any) => {
+    const r = d.paidAmount || 0;
     const e = d.expenseAmount || d.expense || 0;
     return r - e;
   });
@@ -769,42 +873,48 @@ function buildSparklines(salesList: any[], hourlyList: any[]) {
   // Ensure at least 2 distinct values so the path builder doesn't divide by zero.
   // If ALL values are 0, keep them at 0 so the sparkline stays flat (no false trend).
   const ensure = (arr: number[]) => {
-    if (arr.every(v => v === 0)) return arr; // all zeros → stay flat
-    return arr.every(v => v === arr[0]) ? arr.map((v, i) => v + i * 0.001) : arr;
+    if (arr.every((v) => v === 0)) return arr; // all zeros → stay flat
+    return arr.every((v) => v === arr[0])
+      ? arr.map((v, i) => v + i * 0.001)
+      : arr;
   };
 
   return {
-    revenue:  ensure(revenue),
-    bills:    ensure(bills),
+    revenue: ensure(revenue),
+    bills: ensure(bills),
     expenses: ensure(expenses),
-    profit:   ensure(profit),
+    profit: ensure(profit),
   };
 }
 
-function KPIGrid({ data, salesList, hourlyList }: { data: any; salesList?: any[]; hourlyList?: any[] }) {
+function KPIGrid({
+  data,
+  salesList,
+  hourlyList,
+}: {
+  data: any;
+  salesList?: any[];
+  hourlyList?: any[];
+}) {
   const { colors } = useTheme();
 
   if (!data) return null;
 
   const todaysPayments = data.todaysPayments || 0;
-  const todayExpenses  = data.todayExpenses  || 0;
-  const totalBills     = data.totalBills     || 0;
-  const cancelBills    = data.cancelBills    || 0;
+  const todayExpenses = data.todayExpenses || 0;
+  const totalBills = data.totalBills || 0;
+  const cancelBills = data.cancelBills || 0;
   const profit = todaysPayments - todayExpenses;
 
   // Compute dynamic change indicators
-  const profitMarginPct = todaysPayments > 0
-    ? Math.round((profit / todaysPayments) * 100)
-    : 0;
-  const expenseRatioPct = todaysPayments > 0
-    ? Math.round((todayExpenses / todaysPayments) * 100)
-    : 0;
-  const cancelRate = totalBills > 0
-    ? Math.round((cancelBills / totalBills) * 100)
-    : 0;
-  const avgOrderValue = totalBills > 0
-    ? Math.round(todaysPayments / totalBills)
-    : 0;
+  const profitMarginPct =
+    todaysPayments > 0 ? Math.round((profit / todaysPayments) * 100) : 0;
+  const expenseRatioPct =
+    todaysPayments > 0 ? Math.round((todayExpenses / todaysPayments) * 100) : 0;
+  const cancelRate =
+    totalBills > 0 ? Math.round((cancelBills / totalBills) * 100) : 0;
+  const avgOrderValue =
+    totalBills > 0 ? Math.round(todaysPayments / totalBills) : 0;
 
   const sparks = buildSparklines(salesList || [], hourlyList || []);
 
@@ -815,47 +925,47 @@ function KPIGrid({ data, salesList, hourlyList }: { data: any; salesList?: any[]
 
   const mappedData: KPIDataType[] = [
     {
-      title: 'Revenue',
+      title: "Revenue",
       value: `₹${todaysPayments.toLocaleString()}`,
       rawNum: todaysPayments,
       change: `${profitMarginPct}% margin`,
       up: profitMarginPct >= 0,
-      icon: 'trending-up',
-      colorKey: 'green',
-      bgKey: 'greenBg',
+      icon: "trending-up",
+      colorKey: "green",
+      bgKey: "greenBg",
       sparkline: todaysPayments > 0 ? sparks.revenue : FLAT,
     },
     {
-      title: 'Total Bills',
+      title: "Total Bills",
       value: `${totalBills}`,
       rawNum: totalBills,
       change: `Avg ₹${avgOrderValue.toLocaleString()}`,
       up: true,
-      icon: 'shopping-bag',
-      colorKey: 'blue',
-      bgKey: 'blueBg',
+      icon: "shopping-bag",
+      colorKey: "blue",
+      bgKey: "blueBg",
       sparkline: totalBills > 0 ? sparks.bills : FLAT,
     },
     {
-      title: 'Expenses',
+      title: "Expenses",
       value: `₹${todayExpenses.toLocaleString()}`,
       rawNum: todayExpenses,
       change: `${expenseRatioPct}% of rev`,
       up: false,
-      icon: 'credit-card',
-      colorKey: 'red',
-      bgKey: 'redBg',
+      icon: "credit-card",
+      colorKey: "red",
+      bgKey: "redBg",
       sparkline: todayExpenses > 0 ? sparks.expenses : FLAT,
     },
     {
-      title: 'Profit',
+      title: "Profit",
       value: `₹${profit.toLocaleString()}`,
       rawNum: profit,
       change: `${profitMarginPct}%`,
       up: profit >= 0,
-      icon: 'dollar-sign',
-      colorKey: profit >= 0 ? 'green' : 'red',
-      bgKey: profit >= 0 ? 'greenBg' : 'redBg',
+      icon: "dollar-sign",
+      colorKey: profit >= 0 ? "green" : "red",
+      bgKey: profit >= 0 ? "greenBg" : "redBg",
       sparkline: profit !== 0 ? sparks.profit : FLAT,
     },
   ];
@@ -871,7 +981,13 @@ function KPIGrid({ data, salesList, hourlyList }: { data: any; salesList?: any[]
 
 // ─── Payment Pie Chart (Modern) ────────────────────────────
 
-function SalesChartSection({ salesData, hourlyData }: { salesData: any[], hourlyData: any[] }) {
+function SalesChartSection({
+  salesData,
+  hourlyData,
+}: {
+  salesData: any[];
+  hourlyData: any[];
+}) {
   const { colors } = useTheme();
   const [period, setPeriod] = useState<"sales" | "hourly">("sales");
   const [areaWidth, setAreaWidth] = useState(0);
@@ -879,7 +995,7 @@ function SalesChartSection({ salesData, hourlyData }: { salesData: any[], hourly
   const formatXLabel = (val: string, currentPeriod: "sales" | "hourly") => {
     if (!val) return "-";
     const str = val.toString();
-    
+
     if (currentPeriod === "hourly") {
       // Backend typically returns hours like "14", "14:00", etc. Let's make it 12H am/pm format if possible
       const numMatch = str.match(/^(\d+)/);
@@ -891,12 +1007,15 @@ function SalesChartSection({ salesData, hourlyData }: { salesData: any[], hourly
           return `${h} ${ampm}`;
         }
       }
-      return str; 
+      return str;
     }
-    
+
     // Replace API shorthand strings with their full descriptive names
     const orderTypesMap: Record<string, string> = {
-      ret: "Retail", can: "Cancelled", com: "Complimentary", tot: "Total"
+      ret: "Retail",
+      can: "Cancelled",
+      com: "Complimentary",
+      tot: "Total",
     };
 
     const lowerStr = str.toLowerCase().trim();
@@ -904,17 +1023,22 @@ function SalesChartSection({ salesData, hourlyData }: { salesData: any[], hourly
 
     // For 'sales' period, ensure we use standard abbreviations (Mon, Tue, Wed) cleanly
     const daysMap: Record<string, string> = {
-      sunday: "Sun", monday: "Mon", tuesday: "Tue", wednesday: "Wed",
-      thursday: "Thu", friday: "Fri", saturday: "Sat"
+      sunday: "Sun",
+      monday: "Mon",
+      tuesday: "Tue",
+      wednesday: "Wed",
+      thursday: "Thu",
+      friday: "Fri",
+      saturday: "Sat",
     };
 
     if (daysMap[lowerStr]) return daysMap[lowerStr];
-    
+
     // Return full string so descriptive types like "Retail" don't get truncated
     return str;
   };
 
-  const activeData = period === "sales" ? (salesData || []) : (hourlyData || []);
+  const activeData = period === "sales" ? salesData || [] : hourlyData || [];
   const hasData = activeData.length > 0;
   const chartData = hasData
     ? activeData.map((d: any) => ({
@@ -925,18 +1049,22 @@ function SalesChartSection({ salesData, hourlyData }: { salesData: any[], hourly
 
   let maxVal = hasData ? Math.max(...chartData.map((d) => d.value)) : 0;
   if (maxVal === 0) maxVal = 1;
-  
+
   const total = chartData.reduce((sum, d) => sum + d.value, 0);
   const dataPointCount = activeData.length;
   const summary = {
     total: `₹${total.toLocaleString()}`,
-    change: dataPointCount > 0 ? `${dataPointCount} ${period === 'hourly' ? 'hours' : 'entries'}` : 'No data',
+    change:
+      dataPointCount > 0
+        ? `${dataPointCount} ${period === "hourly" ? "hours" : "entries"}`
+        : "No data",
     up: total > 0,
   };
 
-  const emptyMessage = period === 'hourly'
-    ? 'No hourly sales data available'
-    : 'No sales data available for this period';
+  const emptyMessage =
+    period === "hourly"
+      ? "No hourly sales data available"
+      : "No sales data available for this period";
 
   const chartH = hp(180);
   const ySteps = 4;
@@ -1015,210 +1143,299 @@ function SalesChartSection({ salesData, hourlyData }: { salesData: any[], hourly
 
       {/* Chart */}
       {hasData ? (
-      <View style={s.chartContainer}>
-        {/* Y axis labels */}
-        <View style={[s.yAxis, { height: chartH }]}>
-          {yLabels.map((v, i) => (
-            <Text key={i} style={[s.yLabel, { color: colors.textTertiary }]}>
-              {v >= 1000
-                ? `₹${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}K`
-                : `₹${Math.round(v)}`}
-            </Text>
-          ))}
-        </View>
+        <View style={s.chartContainer}>
+          {/* Y axis labels */}
+          <View style={[s.yAxis, { height: chartH }]}>
+            {yLabels.map((v, i) => (
+              <Text key={i} style={[s.yLabel, { color: colors.textTertiary }]}>
+                {v >= 1000
+                  ? `₹${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}K`
+                  : `₹${Math.round(v)}`}
+              </Text>
+            ))}
+          </View>
 
-        {/* Chart area — measure actual width */}
-        <View
-          style={{ flex: 1, overflow: "hidden" }}
-          onLayout={(e) => setAreaWidth(e.nativeEvent.layout.width)}
-        >
-          {areaWidth > 0 && (
-            <>
-              {/* Grid lines */}
-              <View style={[s.chartGridArea, { height: chartH }]}>
-                {yLabels.map((_, i) => (
-                  <View
-                    key={i}
-                    style={[s.gridLine, { backgroundColor: colors.border }]}
-                  />
-                ))}
-              </View>
+          {/* Chart area — measure actual width */}
+          <View
+            style={{ flex: 1, overflow: "hidden" }}
+            onLayout={(e) => setAreaWidth(e.nativeEvent.layout.width)}
+          >
+            {areaWidth > 0 && (
+              <>
+                {/* Grid lines */}
+                <View style={[s.chartGridArea, { height: chartH }]}>
+                  {yLabels.map((_, i) => (
+                    <View
+                      key={i}
+                      style={[s.gridLine, { backgroundColor: colors.border }]}
+                    />
+                  ))}
+                </View>
 
-              {/* Area Line Chart (Overview) or Bar Chart (Hourly) */}
-              {period === 'sales' ? (
-                <>
-                  {/* ── Smooth Area Line Chart with integrated X labels ── */}
-                  {(() => {
-                    const pad = wp(16);
-                    const innerW = areaWidth - pad * 2;
-                    const topPad = hp(8);
-                    const bottomPad = hp(24);
-                    const innerH = chartH - topPad - bottomPad;
-                    const stepX = chartData.length > 1 ? innerW / (chartData.length - 1) : 0;
+                {/* Area Line Chart (Overview) or Bar Chart (Hourly) */}
+                {period === "sales" ? (
+                  <>
+                    {/* ── Smooth Area Line Chart with integrated X labels ── */}
+                    {(() => {
+                      const pad = wp(16);
+                      const innerW = areaWidth - pad * 2;
+                      const topPad = hp(8);
+                      const bottomPad = hp(24);
+                      const innerH = chartH - topPad - bottomPad;
+                      const stepX =
+                        chartData.length > 1
+                          ? innerW / (chartData.length - 1)
+                          : 0;
 
-                    // Build bezier-curved path
-                    const pts = chartData.map((d, i) => ({
-                      x: pad + i * stepX,
-                      y: topPad + (1 - d.value / maxVal) * innerH,
-                    }));
+                      // Build bezier-curved path
+                      const pts = chartData.map((d, i) => ({
+                        x: pad + i * stepX,
+                        y: topPad + (1 - d.value / maxVal) * innerH,
+                      }));
 
-                    let linePath = `M ${pts[0].x} ${pts[0].y}`;
-                    for (let i = 1; i < pts.length; i++) {
-                      const prev = pts[i - 1];
-                      const curr = pts[i];
-                      const cpx1 = prev.x + stepX * 0.4;
-                      const cpx2 = curr.x - stepX * 0.4;
-                      linePath += ` C ${cpx1} ${prev.y}, ${cpx2} ${curr.y}, ${curr.x} ${curr.y}`;
-                    }
+                      let linePath = `M ${pts[0].x} ${pts[0].y}`;
+                      for (let i = 1; i < pts.length; i++) {
+                        const prev = pts[i - 1];
+                        const curr = pts[i];
+                        const cpx1 = prev.x + stepX * 0.4;
+                        const cpx2 = curr.x - stepX * 0.4;
+                        linePath += ` C ${cpx1} ${prev.y}, ${cpx2} ${curr.y}, ${curr.x} ${curr.y}`;
+                      }
 
-                    // Area fill stops above X labels
-                    const areaBottom = topPad + innerH;
-                    const areaLinePath = `${linePath} L ${pts[pts.length - 1].x} ${areaBottom} L ${pts[0].x} ${areaBottom} Z`;
+                      // Area fill stops above X labels
+                      const areaBottom = topPad + innerH;
+                      const areaLinePath = `${linePath} L ${pts[pts.length - 1].x} ${areaBottom} L ${pts[0].x} ${areaBottom} Z`;
 
-                    return (
-                      <Svg width={areaWidth} height={chartH} style={{ position: 'absolute' }}>
-                        <Defs>
-                          <LinearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                            <Stop offset="0" stopColor={colors.primary} stopOpacity="0.25" />
-                            <Stop offset="0.7" stopColor={colors.primary} stopOpacity="0.08" />
-                            <Stop offset="1" stopColor={colors.primary} stopOpacity="0" />
-                          </LinearGradient>
-                          <LinearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
-                            <Stop offset="0" stopColor={colors.blue} stopOpacity="1" />
-                            <Stop offset="1" stopColor={colors.primary} stopOpacity="1" />
-                          </LinearGradient>
-                        </Defs>
-                        {/* Gradient area fill */}
-                        <Path d={areaLinePath} fill="url(#areaGrad)" />
-                        {/* Smooth curve line */}
-                        <Path d={linePath} fill="none" stroke="url(#lineGrad)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
-                        {/* Data point dots */}
-                        {pts.map((p, i) => (
-                          <G key={`dot-${i}`}>
-                            <Circle cx={p.x} cy={p.y} r={wp(5)} fill={colors.card} stroke={colors.primary} strokeWidth={2} />
-                            <Circle cx={p.x} cy={p.y} r={wp(2)} fill={colors.primary} />
-                          </G>
-                        ))}
-                        {/* X-axis labels rendered inside SVG */}
-                        {pts.map((p, i) => {
-                          const showLabel = chartData.length <= 6 || i % Math.ceil(chartData.length / 5) === 0 || i === chartData.length - 1;
-                          if (!showLabel) return null;
-                          return (
-                            <SvgText
-                              key={`xl-${i}`}
-                              x={p.x}
-                              y={chartH - hp(4)}
-                              fontSize={ms(10)}
-                              fontWeight="600"
-                              fill={colors.textTertiary}
-                              textAnchor="middle"
-                            >
-                              {chartData[i].label}
-                            </SvgText>
-                          );
-                        })}
-                      </Svg>
-                    );
-                  })()}
-                </>
-              ) : (
-                <>
-                  {/* ── Rounded Bar Chart (Hourly) ── */}
-                  <Svg
-                    width={areaWidth}
-                    height={chartH}
-                    style={{ position: "absolute" }}
-                  >
-                    <Defs>
-                      <LinearGradient id="barGrad" x1="0" y1="0" x2="0" y2="1">
-                        <Stop offset="0" stopColor={colors.primary} stopOpacity="1" />
-                        <Stop offset="1" stopColor={colors.primary} stopOpacity="0.4" />
-                      </LinearGradient>
-                    </Defs>
-                    {chartData.map((d, i) => {
-                      const barH = (d.value / maxVal) * (chartH - hp(24));
-                      const x = barGap + i * (barWidth + barGap);
-                      const y = chartH - barH;
-                      const radius = Math.min(barWidth / 2, wp(8));
-
-                      const barPath = [
-                        `M ${x} ${chartH}`,
-                        `L ${x} ${y + radius}`,
-                        `Q ${x} ${y}, ${x + radius} ${y}`,
-                        `L ${x + barWidth - radius} ${y}`,
-                        `Q ${x + barWidth} ${y}, ${x + barWidth} ${y + radius}`,
-                        `L ${x + barWidth} ${chartH}`,
-                        `Z`,
-                      ].join(" ");
-
-                      return <Path key={i} d={barPath} fill="url(#barGrad)" />;
-                    })}
-                  </Svg>
-
-                  {/* Value labels above bars */}
-                  <View style={[s.barValueLabels, { height: chartH }]}>
-                    {chartData.map((d, i) => {
-                      const barH = (d.value / maxVal) * (chartH - hp(24));
                       return (
-                        <View
-                          key={i}
-                          style={[
-                            s.barValueWrap,
-                            {
-                              left: barGap + i * (barWidth + barGap),
-                              width: barWidth,
-                              bottom: barH + hp(4),
-                            },
-                          ]}
+                        <Svg
+                          width={areaWidth}
+                          height={chartH}
+                          style={{ position: "absolute" }}
                         >
-                          <Text
+                          <Defs>
+                            <LinearGradient
+                              id="areaGrad"
+                              x1="0"
+                              y1="0"
+                              x2="0"
+                              y2="1"
+                            >
+                              <Stop
+                                offset="0"
+                                stopColor={colors.primary}
+                                stopOpacity="0.25"
+                              />
+                              <Stop
+                                offset="0.7"
+                                stopColor={colors.primary}
+                                stopOpacity="0.08"
+                              />
+                              <Stop
+                                offset="1"
+                                stopColor={colors.primary}
+                                stopOpacity="0"
+                              />
+                            </LinearGradient>
+                            <LinearGradient
+                              id="lineGrad"
+                              x1="0"
+                              y1="0"
+                              x2="1"
+                              y2="0"
+                            >
+                              <Stop
+                                offset="0"
+                                stopColor={colors.blue}
+                                stopOpacity="1"
+                              />
+                              <Stop
+                                offset="1"
+                                stopColor={colors.primary}
+                                stopOpacity="1"
+                              />
+                            </LinearGradient>
+                          </Defs>
+                          {/* Gradient area fill */}
+                          <Path d={areaLinePath} fill="url(#areaGrad)" />
+                          {/* Smooth curve line */}
+                          <Path
+                            d={linePath}
+                            fill="none"
+                            stroke="url(#lineGrad)"
+                            strokeWidth={2.5}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                          {/* Data point dots */}
+                          {pts.map((p, i) => (
+                            <G key={`dot-${i}`}>
+                              <Circle
+                                cx={p.x}
+                                cy={p.y}
+                                r={wp(5)}
+                                fill={colors.card}
+                                stroke={colors.primary}
+                                strokeWidth={2}
+                              />
+                              <Circle
+                                cx={p.x}
+                                cy={p.y}
+                                r={wp(2)}
+                                fill={colors.primary}
+                              />
+                            </G>
+                          ))}
+                          {/* X-axis labels rendered inside SVG */}
+                          {pts.map((p, i) => {
+                            const showLabel =
+                              chartData.length <= 6 ||
+                              i % Math.ceil(chartData.length / 5) === 0 ||
+                              i === chartData.length - 1;
+                            if (!showLabel) return null;
+                            return (
+                              <SvgText
+                                key={`xl-${i}`}
+                                x={p.x}
+                                y={chartH - hp(4)}
+                                fontSize={ms(10)}
+                                fontWeight="600"
+                                fill={colors.textTertiary}
+                                textAnchor="middle"
+                              >
+                                {chartData[i].label}
+                              </SvgText>
+                            );
+                          })}
+                        </Svg>
+                      );
+                    })()}
+                  </>
+                ) : (
+                  <>
+                    {/* ── Rounded Bar Chart (Hourly) ── */}
+                    <Svg
+                      width={areaWidth}
+                      height={chartH}
+                      style={{ position: "absolute" }}
+                    >
+                      <Defs>
+                        <LinearGradient
+                          id="barGrad"
+                          x1="0"
+                          y1="0"
+                          x2="0"
+                          y2="1"
+                        >
+                          <Stop
+                            offset="0"
+                            stopColor={colors.primary}
+                            stopOpacity="1"
+                          />
+                          <Stop
+                            offset="1"
+                            stopColor={colors.primary}
+                            stopOpacity="0.4"
+                          />
+                        </LinearGradient>
+                      </Defs>
+                      {chartData.map((d, i) => {
+                        const barH = (d.value / maxVal) * (chartH - hp(24));
+                        const x = barGap + i * (barWidth + barGap);
+                        const y = chartH - barH;
+                        const radius = Math.min(barWidth / 2, wp(8));
+
+                        const barPath = [
+                          `M ${x} ${chartH}`,
+                          `L ${x} ${y + radius}`,
+                          `Q ${x} ${y}, ${x + radius} ${y}`,
+                          `L ${x + barWidth - radius} ${y}`,
+                          `Q ${x + barWidth} ${y}, ${x + barWidth} ${y + radius}`,
+                          `L ${x + barWidth} ${chartH}`,
+                          `Z`,
+                        ].join(" ");
+
+                        return (
+                          <Path key={i} d={barPath} fill="url(#barGrad)" />
+                        );
+                      })}
+                    </Svg>
+
+                    {/* Value labels above bars */}
+                    <View style={[s.barValueLabels, { height: chartH }]}>
+                      {chartData.map((d, i) => {
+                        const barH = (d.value / maxVal) * (chartH - hp(24));
+                        return (
+                          <View
+                            key={i}
                             style={[
-                              s.barValueText,
-                              { color: colors.textSecondary },
+                              s.barValueWrap,
+                              {
+                                left: barGap + i * (barWidth + barGap),
+                                width: barWidth,
+                                bottom: barH + hp(4),
+                              },
                             ]}
                           >
-                            {d.value >= 1000
-                              ? `${(d.value / 1000).toFixed(1)}k`
-                              : d.value}
+                            <Text
+                              style={[
+                                s.barValueText,
+                                { color: colors.textSecondary },
+                              ]}
+                            >
+                              {d.value >= 1000
+                                ? `${(d.value / 1000).toFixed(1)}k`
+                                : d.value}
+                            </Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+
+                    {/* X labels */}
+                    <View style={s.xAxis}>
+                      {chartData.map((d, i) => (
+                        <View
+                          key={i}
+                          style={{
+                            width: barWidth + barGap,
+                            alignItems: "center",
+                            justifyContent: "flex-start",
+                            paddingTop: hp(4),
+                          }}
+                        >
+                          <Text
+                            style={[s.xLabel, { color: colors.textTertiary }]}
+                            numberOfLines={2}
+                            adjustsFontSizeToFit
+                            minimumFontScale={0.8}
+                          >
+                            {d.label}
                           </Text>
                         </View>
-                      );
-                    })}
-                  </View>
-
-                  {/* X labels */}
-                  <View style={s.xAxis}>
-                    {chartData.map((d, i) => (
-                      <View
-                        key={i}
-                        style={{
-                          width: barWidth + barGap,
-                          alignItems: "center",
-                          justifyContent: "flex-start",
-                          paddingTop: hp(4),
-                        }}
-                      >
-                        <Text 
-                          style={[s.xLabel, { color: colors.textTertiary }]}
-                          numberOfLines={2}
-                          adjustsFontSizeToFit
-                          minimumFontScale={0.8}
-                        >
-                          {d.label}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                </>
-              )}
-            </>
-          )}
+                      ))}
+                    </View>
+                  </>
+                )}
+              </>
+            )}
+          </View>
         </View>
-      </View>
       ) : (
-        <View style={{ paddingVertical: hp(40), alignItems: 'center' }}>
-          <Feather name="bar-chart-2" size={ms(40)} color={colors.textTertiary} style={{ marginBottom: hp(12), opacity: 0.4 }} />
-          <Text style={{ color: colors.textSecondary, fontSize: ms(14), fontWeight: '500', textAlign: 'center' }}>
+        <View style={{ paddingVertical: hp(40), alignItems: "center" }}>
+          <Feather
+            name="bar-chart-2"
+            size={ms(40)}
+            color={colors.textTertiary}
+            style={{ marginBottom: hp(12), opacity: 0.4 }}
+          />
+          <Text
+            style={{
+              color: colors.textSecondary,
+              fontSize: ms(14),
+              fontWeight: "500",
+              textAlign: "center",
+            }}
+          >
             {emptyMessage}
           </Text>
         </View>
@@ -1267,8 +1484,10 @@ function PaymentDonutSection({ data }: { data: any[] }) {
     return (
       <Card>
         <SectionHeader title="Payment Breakdown" />
-        <View style={{ padding: 20, alignItems: 'center' }}>
-          <Text style={{ color: colors.textSecondary }}>No payment data available</Text>
+        <View style={{ padding: 20, alignItems: "center" }}>
+          <Text style={{ color: colors.textSecondary }}>
+            No payment data available
+          </Text>
         </View>
       </Card>
     );
@@ -1432,8 +1651,10 @@ function TaxSummarySection({ data }: { data: any[] }) {
     return (
       <Card>
         <SectionHeader title="Taxes Summary" />
-        <View style={{ padding: hp(20), alignItems: 'center' }}>
-          <Text style={{ color: colors.textSecondary }}>Taxes data unavailable</Text>
+        <View style={{ padding: hp(20), alignItems: "center" }}>
+          <Text style={{ color: colors.textSecondary }}>
+            Taxes data unavailable
+          </Text>
         </View>
       </Card>
     );
@@ -1503,11 +1724,17 @@ function TaxSummarySection({ data }: { data: any[] }) {
                       marginRight: wp(12),
                     }}
                   >
-                    <Feather name={iconName as any} size={ms(18)} color={iconColor} />
+                    <Feather
+                      name={iconName as any}
+                      size={ms(18)}
+                      color={iconColor}
+                    />
                   </View>
                   <Text
                     style={{
-                      color: isTotal ? colors.textPrimary : colors.textSecondary,
+                      color: isTotal
+                        ? colors.textPrimary
+                        : colors.textSecondary,
                       fontSize: ms(15),
                       fontWeight: isTotal ? "bold" : "500",
                     }}
@@ -1520,13 +1747,17 @@ function TaxSummarySection({ data }: { data: any[] }) {
                     color: isZero
                       ? colors.textTertiary
                       : isTotal
-                      ? colors.primary
-                      : colors.textPrimary,
+                        ? colors.primary
+                        : colors.textPrimary,
                     fontSize: isTotal ? ms(16) : ms(14),
                     fontWeight: isTotal ? "bold" : "600",
                   }}
                 >
-                  ₹{value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  ₹
+                  {value.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}
                 </Text>
               </View>
             </View>
@@ -1544,12 +1775,36 @@ function RevenueLeakage({ data }: { data: any }) {
   if (!data) return null;
 
   const leakageData = [
-    { label: "Cancelled Bills", value: data.cancelBills || 0, icon: "close-circle-outline" },
-    { label: "Compliment Bills", value: data.complimentaryBills || data.complimentBills || 0, icon: "gift-outline" },
-    { label: "Reprint Bills", value: data.reprintBills || data.rePrintBills || 0, icon: "printer-outline" },
-    { label: "Modified Bills", value: data.modifiedBills || data.modifedBills || 0, icon: "file-document-edit-outline" },
-    { label: "Cancelled KOT", value: data.cancelledKOT || data.cancelKOT || 0, icon: "alert-circle-outline" },
-    { label: "Deleted KOT", value: data.deletedKOT || data.deleteKOT || 0, icon: "trash-can-outline" },
+    {
+      label: "Cancelled Bills",
+      value: data.cancelBills || 0,
+      icon: "close-circle-outline",
+    },
+    {
+      label: "Compliment Bills",
+      value: data.complimentaryBills || data.complimentBills || 0,
+      icon: "gift-outline",
+    },
+    {
+      label: "Reprint Bills",
+      value: data.reprintBills || data.rePrintBills || 0,
+      icon: "printer-outline",
+    },
+    {
+      label: "Modified Bills",
+      value: data.modifiedBills || data.modifedBills || 0,
+      icon: "file-document-edit-outline",
+    },
+    {
+      label: "Cancelled KOT",
+      value: data.cancelledKOT || data.cancelKOT || 0,
+      icon: "alert-circle-outline",
+    },
+    {
+      label: "Deleted KOT",
+      value: data.deletedKOT || data.deleteKOT || 0,
+      icon: "trash-can-outline",
+    },
   ];
 
   return (
@@ -1598,8 +1853,10 @@ function ExpensesSection({ data }: { data: any[] }) {
     return (
       <Card>
         <SectionHeader title="Expenses" />
-        <View style={{ padding: 20, alignItems: 'center' }}>
-          <Text style={{ color: colors.textSecondary }}>No expense data available</Text>
+        <View style={{ padding: 20, alignItems: "center" }}>
+          <Text style={{ color: colors.textSecondary }}>
+            No expense data available
+          </Text>
         </View>
       </Card>
     );
@@ -1607,7 +1864,14 @@ function ExpensesSection({ data }: { data: any[] }) {
 
   const total = data.reduce((sum, e) => sum + (e.expenseAmount || 0), 0);
   const mappedData = data.map((e, i) => {
-    const colorKeys = ["primary", "orange", "teal", "textTertiary", "red", "blue"] as const;
+    const colorKeys = [
+      "primary",
+      "orange",
+      "teal",
+      "textTertiary",
+      "red",
+      "blue",
+    ] as const;
     const colorKey = colorKeys[i % colorKeys.length];
     return {
       label: e.categoryName || "Unknown",
@@ -1680,11 +1944,11 @@ const MEDAL_BG = ["#FEF3C7", "#F1F5F9", "#FEF3C7"] as const;
 
 function TopSellingSection({ data }: { data: any[] }) {
   const { colors } = useTheme();
-  
+
   if (!data || data.length === 0) return null;
 
   const totalSales = data.reduce((sum, d) => sum + (d.totalPrice || 0), 0);
-  const topItems = data.slice(0, 5).map(d => ({
+  const topItems = data.slice(0, 5).map((d) => ({
     name: d.productDescription || "Unknown",
     qty: d.count || 0,
     revenue: `₹${(d.totalPrice || 0).toLocaleString()}`,
@@ -2168,7 +2432,11 @@ const s = StyleSheet.create({
     gap: wp(4),
   },
   chartTotalBadgeText: { fontSize: ms(12), fontWeight: "700" },
-  chartContainer: { flexDirection: "row", marginTop: hp(24), marginBottom: hp(8) },
+  chartContainer: {
+    flexDirection: "row",
+    marginTop: hp(24),
+    marginBottom: hp(8),
+  },
   yAxis: {
     justifyContent: "space-between",
     alignItems: "flex-end",
@@ -2199,7 +2467,12 @@ const s = StyleSheet.create({
     marginTop: hp(8),
     paddingLeft: wp(4),
   },
-  xLabel: { fontSize: ms(10), fontWeight: "600", textAlign: "center", lineHeight: ms(14) },
+  xLabel: {
+    fontSize: ms(10),
+    fontWeight: "600",
+    textAlign: "center",
+    lineHeight: ms(14),
+  },
 
   // Payment Breakdown
   paymentLayout: {
