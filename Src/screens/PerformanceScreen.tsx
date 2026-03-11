@@ -9,7 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 
-import { GradientHeader } from '../components';
+import { GradientHeader, DateRangePicker, type DateRangePickerRef, ScreenWrapper } from '../components';
 import { useAuth } from '../context/AuthContext';
 import { useDateFilter } from '../context/DateFilterContext';
 import { getBranchMaster } from '../api/branchService';
@@ -115,7 +115,9 @@ export default function PerformanceScreen() {
   const { authData } = useAuth();
   const navigation = useNavigation<any>();
   // Global date from Dashboard calendar
-  const { startDate, endDate } = useDateFilter();
+  const { startDate, endDate, dateRange, activeFilter, setDateFilter } = useDateFilter();
+
+  const calendarRef = useRef<DateRangePickerRef>(null);
 
   const [activeChip, setActiveChip] = useState<ChipKey>('Overall');
   const [trendPeriod, setTrendPeriod] = useState('This Month');
@@ -267,7 +269,7 @@ export default function PerformanceScreen() {
   const todayPayments = countData.todaysPayments || 0;
   const todayExpenses = countData.todayExpenses || 0;
   const cancelBills = countData.cancelBills || 0;
-  const compBills = countData.complimentaryBills || 0;
+  const compBills = countData.complimentaryBills || countData.complimentBills || 0;
   const modifiedBills = countData.modifiedBills || 0;
   const profit = todayPayments - todayExpenses;
 
@@ -765,10 +767,17 @@ export default function PerformanceScreen() {
 
   /* ── Main render ─────────────────────────────────────────── */
   return (
-    <View style={{ flex: 1, backgroundColor: colors.bg }}>
+    <ScreenWrapper edges={['bottom', 'left', 'right']} style={{ flex: 1 }}>
       <GradientHeader
         title="Performance"
-        onBack={() => navigation.goBack()}
+        onCalendarPress={() => calendarRef.current?.openModal()}
+      />
+      <DateRangePicker
+        ref={calendarRef}
+        hideChip={true}
+        dateRange={dateRange}
+        activeFilter={activeFilter}
+        onDateRangeChange={setDateFilter}
       />
       {loading && !refreshing ? (
         <View style={s.loadingBox}>
@@ -807,7 +816,7 @@ export default function PerformanceScreen() {
           <View style={{ height: hp(100) }} />
         </ScrollView>
       )}
-    </View>
+    </ScreenWrapper>
   );
 }
 

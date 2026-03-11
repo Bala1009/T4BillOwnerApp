@@ -19,7 +19,14 @@ import Svg, { Path, Defs, LinearGradient, Stop, Circle, Text as SvgText, Line, G
 
 import { getBranchMaster } from "../api/branchService";
 import { getSalesDetails } from "../api/dashboardService";
-import { Card, GradientHeader, ScreenWrapper, SectionHeader } from "../components";
+import { 
+  Card, 
+  GradientHeader, 
+  ScreenWrapper, 
+  SectionHeader,
+  DateRangePicker,
+  type DateRangePickerRef
+} from "../components";
 import { useAuth } from "../context/AuthContext";
 import { useDateFilter } from "../context/DateFilterContext";
 import { RootStackParamList } from "../navigation/AppNavigator";
@@ -36,8 +43,10 @@ export default function PurchaseOrdersScreen() {
   const { colors } = useTheme();
   const navigation = useNavigation<PurchaseOrdersScreenNavigationProp>();
   const { authData } = useAuth();
-  // Global date filter from Dashboard calendar
-  const { startDate: globalStartDate, endDate: globalEndDate } = useDateFilter();
+  // Global date filter from dashboard calendar
+  const { startDate: globalStartDate, endDate: globalEndDate, dateRange, activeFilter, setDateFilter: setGlobalDateFilter } = useDateFilter();
+  
+  const calendarRef = React.useRef<DateRangePickerRef>(null);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -215,21 +224,30 @@ export default function PurchaseOrdersScreen() {
   };
 
   const renderHeader = () => (
-    <GradientHeader
-      title="Orders"
-      onBack={() => navigation.goBack()}
-      rightElement={
-        <TouchableOpacity
-          onPress={() => setFilterVisible(true)}
-          accessibilityLabel="Filter orders"
-        >
-          <View>
-            <Feather name="filter" size={ms(22)} color="#FFF" />
-            <View style={[s.filterBadge, { backgroundColor: colors.accent, borderColor: 'rgba(255,255,255,0.6)' }]} />
-          </View>
-        </TouchableOpacity>
-      }
-    />
+    <>
+      <GradientHeader
+        title="Orders"
+        onCalendarPress={() => calendarRef.current?.openModal()}
+        rightElement={
+          <TouchableOpacity
+            onPress={() => setFilterVisible(true)}
+            accessibilityLabel="Filter orders"
+          >
+            <View>
+              <Feather name="filter" size={ms(22)} color="#FFF" />
+              <View style={[s.filterBadge, { backgroundColor: colors.accent, borderColor: 'rgba(255,255,255,0.6)' }]} />
+            </View>
+          </TouchableOpacity>
+        }
+      />
+      <DateRangePicker
+        ref={calendarRef}
+        hideChip={true}
+        dateRange={dateRange}
+        activeFilter={activeFilter}
+        onDateRangeChange={setGlobalDateFilter}
+      />
+    </>
   );
 
 
@@ -338,7 +356,7 @@ export default function PurchaseOrdersScreen() {
                 <Feather name="gift" size={ms(18)} color={colors.green} />
               </View>
               <View style={s.summaryTextWrap}>
-                <Text style={[s.summaryValue, { color: colors.textPrimary }]}>{countData.complimentaryBills || 0}</Text>
+                <Text style={[s.summaryValue, { color: colors.textPrimary }]}>{countData.complimentaryBills || countData.complimentBills || 0}</Text>
                 <Text style={[s.summaryLabel, { color: colors.textSecondary }]}>Complimentary</Text>
               </View>
             </Card>

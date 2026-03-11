@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -15,15 +16,14 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
-  Image,
 } from "react-native";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
-  withTiming,
   withDelay,
   withRepeat,
+  withSpring,
+  withTiming,
 } from "react-native-reanimated";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { loginUser } from "../api/authApi";
@@ -61,7 +61,10 @@ export default function LoginScreen() {
 
     // Floating background animations
     blob1Y.value = withRepeat(withTiming(-20, { duration: 3000 }), -1, true);
-    blob2Y.value = withDelay(1000, withRepeat(withTiming(20, { duration: 3500 }), -1, true));
+    blob2Y.value = withDelay(
+      1000,
+      withRepeat(withTiming(20, { duration: 3500 }), -1, true),
+    );
 
     if (isSuccess) {
       successScale.value = withSpring(1, { damping: 12 });
@@ -130,7 +133,9 @@ export default function LoginScreen() {
         await setAuthData({
           authtoken: token || null,
           ClientID: clientID,
-          userDetails: res.data ? { ...res.data, loginUserName: userName } : { loginUserName: userName },
+          userDetails: res.data
+            ? { ...res.data, loginUserName: userName }
+            : { loginUserName: userName },
         });
 
         // Only success if API confirms login
@@ -149,6 +154,9 @@ export default function LoginScreen() {
       }
     }
   };
+
+  const isInputValid = userName.trim().length > 0 && password.length > 0;
+  const isLoginDisabled = !isInputValid || isLoading;
 
   if (isSuccess) {
     return (
@@ -213,11 +221,27 @@ export default function LoginScreen() {
           showsVerticalScrollIndicator={false}
         >
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <View style={[styles.inner, { backgroundColor: colors.bg, overflow: 'hidden' }]}>
-              
+            <View
+              style={[
+                styles.inner,
+                { backgroundColor: colors.bg, overflow: "hidden" },
+              ]}
+            >
               {/* Creative Animated Background Blobs */}
-              <Animated.View style={[styles.blob1, { backgroundColor: colors.primary + '15' }, blob1Style]} />
-              <Animated.View style={[styles.blob2, { backgroundColor: colors.blue + '15' }, blob2Style]} />
+              <Animated.View
+                style={[
+                  styles.blob1,
+                  { backgroundColor: colors.primary + "15" },
+                  blob1Style,
+                ]}
+              />
+              <Animated.View
+                style={[
+                  styles.blob2,
+                  { backgroundColor: colors.blue + "15" },
+                  blob2Style,
+                ]}
+              />
 
               <Animated.View style={[styles.header, formAnimatedStyle]}>
                 <Image
@@ -340,23 +364,23 @@ export default function LoginScreen() {
                   ) : null}
                 </View>
                 {/* Forgot Password */}
-                <TouchableOpacity style={styles.forgotPasswordContainer}>
+                {/* <TouchableOpacity style={styles.forgotPasswordContainer}>
                   <Text
                     style={[styles.forgotPasswordText, { color: colors.blue }]}
                   >
                     Forgot Password?
                   </Text>
-                </TouchableOpacity>
+                </TouchableOpacity> */}
 
                 {/* Login Button */}
                 <TouchableOpacity
                   style={[
                     styles.loginButton,
                     { backgroundColor: colors.primary },
-                    isLoading && styles.loginButtonDisabled,
+                    isLoginDisabled && styles.loginButtonDisabled,
                   ]}
                   onPress={handleLogin}
-                  disabled={isLoading}
+                  disabled={isLoginDisabled}
                   activeOpacity={0.8}
                 >
                   {isLoading ? (
@@ -463,6 +487,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
+    marginTop: hp(20),
   },
   loginButtonDisabled: {
     opacity: 0.6,
@@ -524,7 +549,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
   },
   blob1: {
-    position: 'absolute',
+    position: "absolute",
     top: hp(-50),
     right: wp(-50),
     width: wp(200),
@@ -532,7 +557,7 @@ const styles = StyleSheet.create({
     borderRadius: wp(100),
   },
   blob2: {
-    position: 'absolute',
+    position: "absolute",
     bottom: hp(100),
     left: wp(-80),
     width: wp(160),

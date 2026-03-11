@@ -10,7 +10,6 @@ import {
     View,
 } from "react-native";
 import Animated, {
-    SlideInDown,
     useAnimatedStyle,
     useSharedValue,
     withSpring,
@@ -21,10 +20,15 @@ import { hp, ms, useTheme, wp } from "../theme";
 export type DateRange = { start: Date; end: Date };
 export type QuickFilter = "today" | "yesterday" | "this_week" | "this_month" | "last_month" | "custom";
 
+export interface CalendarPickerRef {
+    openModal: () => void;
+}
+
 interface CalendarPickerProps {
     dateRange: DateRange;
     activeFilter: QuickFilter;
     onDateRangeChange: (range: DateRange, filter: QuickFilter) => void;
+    hideChip?: boolean;
 }
 
 // ─── Helpers ────────────────────────────────────────────────
@@ -266,11 +270,12 @@ function DayCell({
 }
 
 // ─── Main Calendar Picker ───────────────────────────────────
-export default function CalendarPicker({
+export const CalendarPicker = React.forwardRef<CalendarPickerRef, CalendarPickerProps>(({
     dateRange,
     activeFilter,
     onDateRangeChange,
-}: CalendarPickerProps) {
+    hideChip = false,
+}, ref) => {
     const { colors } = useTheme();
     const [modalVisible, setModalVisible] = useState(false);
 
@@ -294,6 +299,10 @@ export default function CalendarPicker({
         selectingEndRef.current = false;
         setModalVisible(true);
     }, [dateRange, activeFilter]);
+
+    React.useImperativeHandle(ref, () => ({
+        openModal
+    }));
 
     // Generate calendar grid
     const calendarDays = useMemo(() => {
@@ -409,19 +418,21 @@ export default function CalendarPicker({
     return (
         <>
             {/* ─── Trigger Chip ──────────────────────── */}
-            <View style={styles.filterRow}>
-                <TouchableOpacity
-                    onPress={openModal}
-                    activeOpacity={0.7}
-                    style={[styles.dateChip, { backgroundColor: colors.card, borderColor: "rgba(0,0,0,0.03)" }]}
-                >
-                    <View style={[styles.chipIconWrap, { backgroundColor: colors.primaryLight }]}>
-                        <Feather name="calendar" size={ms(14)} color={colors.primary} />
-                    </View>
-                    <Text style={[styles.dateChipText, { color: colors.textPrimary }]}>{displayText}</Text>
-                    <Feather name="chevron-down" size={ms(14)} color={colors.textTertiary} />
-                </TouchableOpacity>
-            </View>
+            {!hideChip && (
+                <View style={styles.filterRow}>
+                    <TouchableOpacity
+                        onPress={openModal}
+                        activeOpacity={0.7}
+                        style={[styles.dateChip, { backgroundColor: colors.card, borderColor: "rgba(0,0,0,0.03)" }]}
+                    >
+                        <View style={[styles.chipIconWrap, { backgroundColor: colors.primaryLight }]}>
+                            <Feather name="calendar" size={ms(14)} color={colors.primary} />
+                        </View>
+                        <Text style={[styles.dateChipText, { color: colors.textPrimary }]}>{displayText}</Text>
+                        <Feather name="chevron-down" size={ms(14)} color={colors.textTertiary} />
+                    </TouchableOpacity>
+                </View>
+            )}
 
             {/* ─── Modal ─────────────────────────────── */}
             <Modal
@@ -436,8 +447,7 @@ export default function CalendarPicker({
                     <Pressable style={styles.overlayBg} onPress={() => setModalVisible(false)} />
 
                     {/* Bottom sheet */}
-                    <Animated.View
-                        entering={SlideInDown.springify().damping(18).stiffness(120)}
+                    <View
                         style={[styles.modalContent, { backgroundColor: colors.card }]}
                     >
                         {/* Handle bar */}
@@ -561,12 +571,14 @@ export default function CalendarPicker({
                                 </TouchableOpacity>
                             </View>
                         </ScrollView>
-                    </Animated.View>
+                    </View>
                 </View>
             </Modal>
         </>
     );
-}
+});
+
+export default CalendarPicker;
 
 // ─── Styles ─────────────────────────────────────────────────
 const CELL_SIZE = (100 / 7);

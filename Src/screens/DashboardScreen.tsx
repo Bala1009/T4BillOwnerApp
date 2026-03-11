@@ -8,7 +8,6 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   DeviceEventEmitter,
-  FlatList,
   Modal,
   Pressable,
   RefreshControl,
@@ -18,6 +17,7 @@ import {
   TouchableOpacity,
   TouchableWithoutFeedback,
   View,
+  type LayoutChangeEvent,
 } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -32,26 +32,24 @@ import Svg, {
   LinearGradient,
   Path,
   Stop,
-  Text as SvgText,
 } from "react-native-svg";
 import { getBranchMaster } from "../api/branchService";
 import { getSalesDetails } from "../api/dashboardService";
 import {
-  CalendarPicker,
   Card,
+  DateRangePicker,
+  GradientHeader,
   ScreenWrapper,
   SectionHeader,
+  type DateRangePickerRef,
 } from "../components";
 import { useAuth } from "../context/AuthContext";
 import { useDateFilter } from "../context/DateFilterContext";
 import type { ThemeColors } from "../theme";
 import { hp, ms, useTheme, wp } from "../theme";
 
-// ─── Dummy Data Removed ─────────────────────────────────────
 
-// ─── SVG Helpers ────────────────────────────────────────────
 
-/** Build a smooth SVG path from data points */
 function buildAreaPath(
   data: number[],
   width: number,
@@ -92,7 +90,7 @@ function buildAreaPath(
 // ─── Main Dashboard ─────────────────────────────────────────
 export default function DashboardScreen() {
   const { authData } = useAuth();
-  const { colors, toggleTheme, isDark } = useTheme();
+  const { colors, isDark } = useTheme();
   // ── Global date filter (shared across all screens) ────────
   const { dateRange, activeFilter, startDate, endDate, setDateFilter } =
     useDateFilter();
@@ -102,6 +100,8 @@ export default function DashboardScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const calendarRef = useRef<DateRangePickerRef>(null);
 
   const fetchDashboardData = useCallback(async () => {
     if (!authData?.ClientID || !selectedBranch) return;
@@ -167,7 +167,7 @@ export default function DashboardScreen() {
     fetchDashboardData();
   }, [fetchDashboardData]);
 
-  // Removed — CalendarPicker now calls setDateFilter from context directly
+  // Removed — DateRangePicker now calls setDateFilter from context directly
 
   // Ensure arrays are typed consistently for ItemRankingSection
   const itemWiseSales = dashboardData?.dashBoardItemWiseSalesList || [];
@@ -203,13 +203,17 @@ export default function DashboardScreen() {
   );
 
   return (
-    <ScreenWrapper>
+    <ScreenWrapper edges={["bottom", "left", "right"]}>
+      <GradientHeader
+        title="Dashboard"
+        onCalendarPress={() => calendarRef.current?.openModal()}
+      />
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{
           paddingHorizontal: wp(16),
           paddingBottom: hp(60),
-          paddingTop: hp(12),
+          paddingTop: hp(8),
         }}
         refreshControl={
           <RefreshControl
@@ -223,13 +227,16 @@ export default function DashboardScreen() {
           />
         }
       >
-        <Header onBranchSelected={setSelectedBranch} />
-        <Greeting />
-        <CalendarPicker
-          dateRange={dateRange}
-          activeFilter={activeFilter}
-          onDateRangeChange={setDateFilter}
-        />
+        <View style={{ paddingHorizontal: wp(0), paddingTop: hp(8) }}>
+          <BranchSelector onBranchSelected={setSelectedBranch} />
+          <DateRangePicker
+            ref={calendarRef}
+            hideChip={true}
+            dateRange={dateRange}
+            activeFilter={activeFilter}
+            onDateRangeChange={setDateFilter}
+          />
+        </View>
         {isLoading ? (
           <View style={{ padding: hp(40), alignItems: "center" }}>
             <ActivityIndicator size="large" color={colors.primary} />
@@ -269,6 +276,11 @@ export default function DashboardScreen() {
           </View>
         ) : dashboardData ? (
           <>
+            <PremiumTotalSalesCard
+              salesList={dashboardData.dashBoardSalesList || []}
+              countData={dashboardData.dashBoardCount || {}}
+              hourlyList={dashboardData.dashBoardHourlyList || []}
+            />
             <KPIGrid
               data={dashboardData.dashBoardCount}
               salesList={dashboardData.dashBoardSalesList || []}
@@ -323,13 +335,13 @@ export default function DashboardScreen() {
   );
 }
 
-// ─── Header ─────────────────────────────────────────────────
-function Header({
+// ─── Branch Selector ────────────────────────────────────────
+function BranchSelector({
   onBranchSelected,
 }: {
   onBranchSelected?: (branch: any) => void;
 }) {
-  const { colors, toggleTheme, isDark } = useTheme();
+  const { colors, isDark } = useTheme();
   const { authData } = useAuth();
   const navigation = useNavigation<any>();
   const [branches, setBranches] = useState<any[]>([]);
@@ -392,18 +404,7 @@ function Header({
     b?.branchName || b?.BranchName || b?.name || "Unknown Branch";
 
   return (
-    <View style={s.header}>
-      <TouchableOpacity
-        style={[s.headerIcon, { backgroundColor: colors.card }]}
-        onPress={() => {
-          const parent = navigation.getParent();
-          if (parent && parent.openDrawer) parent.openDrawer();
-          else navigation.openDrawer?.();
-        }}
-      >
-        <Feather name="menu" size={ms(22)} color={colors.textPrimary} />
-      </TouchableOpacity>
-
+    <View>
       <TouchableOpacity
         style={[s.branchSelector, { backgroundColor: colors.card }]}
         onPress={() => setDropdownVisible(true)}
@@ -412,6 +413,12 @@ function Header({
           <ActivityIndicator size="small" color={colors.textPrimary} />
         ) : (
           <>
+            <Feather
+              name="map-pin"
+              size={ms(16)}
+              color={colors.primary}
+              style={{ marginRight: wp(8) }}
+            />
             <Text
               style={[s.branchText, { color: colors.textPrimary }]}
               numberOfLines={1}
@@ -427,41 +434,28 @@ function Header({
         )}
       </TouchableOpacity>
 
-      <View style={{ flexDirection: "row", alignItems: "center", gap: wp(10) }}>
-        <TouchableOpacity
-          style={[s.headerIcon, { backgroundColor: colors.card }]}
-          onPress={toggleTheme}
-        >
-          <Feather
-            name={isDark ? "sun" : "moon"}
-            size={ms(22)}
-            color={colors.textPrimary}
-          />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[s.headerIcon, { backgroundColor: colors.card }]}
-          onPress={() => navigation.navigate("Notifications")}
-        >
-          <View>
-            <Feather name="bell" size={ms(22)} color={colors.textPrimary} />
-            <View style={[s.notifDot, { backgroundColor: colors.accent }]} />
-          </View>
-        </TouchableOpacity>
-      </View>
-
       {/* Branch Dropdown Modal */}
       <Modal
         visible={isDropdownVisible}
         transparent={true}
-        animationType="fade"
+        animationType="slide"
         onRequestClose={() => setDropdownVisible(false)}
       >
         <TouchableWithoutFeedback onPress={() => setDropdownVisible(false)}>
-          <View style={s.modalOverlay}>
+          <View
+            style={[s.modalOverlay, { justifyContent: "flex-end", padding: 0 }]}
+          >
             <TouchableWithoutFeedback>
               <View
-                style={[s.dropdownContent, { backgroundColor: colors.card }]}
+                style={[
+                  s.dropdownContent,
+                  {
+                    backgroundColor: colors.card,
+                    borderBottomLeftRadius: 0,
+                    borderBottomRightRadius: 0,
+                    paddingBottom: hp(32),
+                  },
+                ]}
               >
                 <View style={s.dropdownHeader}>
                   <Text
@@ -469,7 +463,10 @@ function Header({
                   >
                     Select Branch
                   </Text>
-                  <TouchableOpacity onPress={() => setDropdownVisible(false)}>
+                  <TouchableOpacity
+                    onPress={() => setDropdownVisible(false)}
+                    style={s.dropdownCloseBtn}
+                  >
                     <Feather
                       name="x"
                       size={ms(20)}
@@ -477,76 +474,101 @@ function Header({
                     />
                   </TouchableOpacity>
                 </View>
+
                 {branches.length === 0 ? (
-                  <Text style={[s.noDataText, { color: colors.textSecondary }]}>
-                    No branches available
+                  <Text
+                    style={[
+                      s.noDataText,
+                      {
+                        color: colors.textSecondary,
+                        textAlign: "center",
+                        padding: ms(16),
+                      },
+                    ]}
+                  >
+                    No data available for this branch
                   </Text>
                 ) : (
-                  <FlatList
-                    data={branches}
-                    keyExtractor={(item, index) =>
-                      item?.BranchID?.toString() ||
-                      item?.branchID?.toString() ||
-                      item?.BranchId?.toString() ||
-                      item?.branchId?.toString() ||
-                      item?.id?.toString() ||
-                      index.toString()
-                    }
+                  <ScrollView
+                    style={{ maxHeight: hp(300) }}
                     showsVerticalScrollIndicator={false}
-                    renderItem={({ item }) => {
+                  >
+                    {branches.map((b, i) => {
                       const isSelected =
                         (selectedBranch?.BranchID &&
-                          item?.BranchID &&
-                          selectedBranch.BranchID === item.BranchID) ||
+                          b?.BranchID &&
+                          selectedBranch.BranchID === b.BranchID) ||
                         (selectedBranch?.branchID &&
-                          item?.branchID &&
-                          selectedBranch.branchID === item.branchID) ||
+                          b?.branchID &&
+                          selectedBranch.branchID === b.branchID) ||
                         (selectedBranch?.BranchId &&
-                          item?.BranchId &&
-                          selectedBranch.BranchId === item.BranchId) ||
+                          b?.BranchId &&
+                          selectedBranch.BranchId === b.BranchId) ||
                         (selectedBranch?.branchId &&
-                          item?.branchId &&
-                          selectedBranch.branchId === item.branchId) ||
+                          b?.branchId &&
+                          selectedBranch.branchId === b.branchId) ||
                         (selectedBranch?.id &&
-                          item?.id &&
-                          selectedBranch.id === item.id) ||
-                        selectedBranch === item;
+                          b?.id &&
+                          selectedBranch.id === b.id) ||
+                        selectedBranch === b;
+
+                      const bName = getBranchName(b);
 
                       return (
                         <TouchableOpacity
+                          key={i}
                           style={[
-                            s.branchItem,
+                            s.branchOptionRow,
                             isSelected && {
-                              backgroundColor: colors.primaryLight,
+                              backgroundColor: isDark
+                                ? colors.border
+                                : "#F8FAFC",
                             },
-                            { borderBottomColor: colors.border },
                           ]}
-                          onPress={() => handleBranchSelect(item)}
+                          onPress={() => handleBranchSelect(b)}
                         >
-                          <Text
-                            style={[
-                              s.branchItemText,
-                              {
-                                color: isSelected
-                                  ? colors.primary
-                                  : colors.textPrimary,
-                              },
-                              isSelected && { fontWeight: "700" },
-                            ]}
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              flex: 1,
+                            }}
                           >
-                            {getBranchName(item)}
-                          </Text>
+                            <Feather
+                              name="map-pin"
+                              size={ms(16)}
+                              color={
+                                isSelected
+                                  ? colors.primary
+                                  : colors.textSecondary
+                              }
+                              style={{ marginRight: wp(12) }}
+                            />
+                            <Text
+                              style={[
+                                s.branchOptionText,
+                                {
+                                  color: isSelected
+                                    ? colors.primary
+                                    : colors.textPrimary,
+                                  fontWeight: isSelected ? "bold" : "600",
+                                },
+                              ]}
+                            >
+                              {bName}
+                            </Text>
+                          </View>
                           {isSelected && (
                             <Feather
-                              name="check"
+                              name="check-circle"
                               size={ms(18)}
                               color={colors.primary}
                             />
                           )}
                         </TouchableOpacity>
                       );
-                    }}
-                  />
+                    })}
+                  </ScrollView>
                 )}
               </View>
             </TouchableWithoutFeedback>
@@ -705,7 +727,8 @@ type KPIDataType = {
     | "credit-card"
     | "dollar-sign"
     | "arrow-up-right"
-    | "arrow-down-right";
+    | "arrow-down-right"
+    | "users";
   colorKey: "green" | "blue" | "red" | "orange";
   bgKey: "greenBg" | "blueBg" | "redBg" | "orangeBg";
   sparkline: number[];
@@ -854,6 +877,7 @@ function buildSparklines(salesList: any[], hourlyList: any[]) {
     // Not enough points — return a flat line at zero (no misleading trend)
     return {
       revenue: [0, 0, 0],
+      customers: [0, 0, 0],
       bills: [0, 0, 0],
       expenses: [0, 0, 0],
       profit: [0, 0, 0],
@@ -861,6 +885,12 @@ function buildSparklines(salesList: any[], hourlyList: any[]) {
   }
 
   const revenue = source.map((d: any) => Math.max(0, d.paidAmount || 0));
+  const customers = source.map((d: any) =>
+    Math.max(
+      0,
+      d.totalCustomer || d.customerCount || d.billCount || d.totalBills || 0,
+    ),
+  );
   const bills = source.map((d: any) =>
     Math.max(0, d.billCount || d.totalBills || 0),
   );
@@ -884,6 +914,7 @@ function buildSparklines(salesList: any[], hourlyList: any[]) {
 
   return {
     revenue: ensure(revenue),
+    customers: ensure(customers),
     bills: ensure(bills),
     expenses: ensure(expenses),
     profit: ensure(profit),
@@ -903,10 +934,11 @@ function KPIGrid({
 
   if (!data) return null;
 
-  const todaysPayments = data.todaysPayments || 0;
-  const todayExpenses = data.todayExpenses || 0;
-  const totalBills = data.totalBills || 0;
-  const cancelBills = data.cancelBills || 0;
+  const todaysPayments = data?.todaysPayments || 0;
+  const todayExpenses = data?.todayExpenses || 0;
+  const totalBills = data?.totalBills || 0;
+  const cancelBills = data?.cancelBills || 0;
+  const totalCustomer = data?.totalCustomer || 0;
   const profit = todaysPayments - todayExpenses;
 
   // Compute dynamic change indicators
@@ -914,8 +946,6 @@ function KPIGrid({
     todaysPayments > 0 ? Math.round((profit / todaysPayments) * 100) : 0;
   const expenseRatioPct =
     todaysPayments > 0 ? Math.round((todayExpenses / todaysPayments) * 100) : 0;
-  const cancelRate =
-    totalBills > 0 ? Math.round((cancelBills / totalBills) * 100) : 0;
   const avgOrderValue =
     totalBills > 0 ? Math.round(todaysPayments / totalBills) : 0;
 
@@ -928,15 +958,15 @@ function KPIGrid({
 
   const mappedData: KPIDataType[] = [
     {
-      title: "Revenue",
-      value: `₹${todaysPayments.toLocaleString()}`,
-      rawNum: todaysPayments,
-      change: `${profitMarginPct}% margin`,
-      up: profitMarginPct >= 0,
-      icon: "trending-up",
+      title: "Total Customers",
+      value: `${totalCustomer}`,
+      rawNum: totalCustomer,
+      change: totalCustomer > 0 ? `+${totalCustomer} today` : `0 today`,
+      up: totalCustomer >= 0,
+      icon: "users",
       colorKey: "green",
       bgKey: "greenBg",
-      sparkline: todaysPayments > 0 ? sparks.revenue : FLAT,
+      sparkline: totalCustomer > 0 ? sparks.customers : FLAT,
     },
     {
       title: "Total Bills",
@@ -982,6 +1012,297 @@ function KPIGrid({
   );
 }
 
+// ─── Semi-Circular Gauge Component ──────────────────────────
+function SemiCircularGauge({
+  progress,
+  size,
+  strokeWidth,
+}: {
+  progress: number; // 0 to 1
+  size: number;
+  strokeWidth: number;
+}) {
+  const { Animated: RNAnimated, Easing: RNEasing } = require("react-native");
+  const dashAnim = useRef(new RNAnimated.Value(0)).current;
+
+  useEffect(() => {
+    dashAnim.setValue(0);
+    RNAnimated.timing(dashAnim, {
+      toValue: 1,
+      duration: 900,
+      easing: RNEasing.out(RNEasing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [progress]);
+
+  // Animated numeric value for dash calculations
+  const [animFraction, setAnimFraction] = useState(0);
+  useEffect(() => {
+    const id = dashAnim.addListener(({ value }: { value: number }) => {
+      setAnimFraction(value * progress);
+    });
+    return () => dashAnim.removeListener(id);
+  }, [dashAnim, progress]);
+
+  // ── Geometry ──
+  const pad = strokeWidth / 2 + 6; // padding to avoid clipping round caps
+  const radius = (size - pad * 2) / 2;
+  const cx = size / 2;
+  const cy = pad + radius; // arc center at bottom of the half-circle
+  const svgH = cy + strokeWidth / 2 + 6; // include bottom stroke + margin
+
+  const trackThickness = strokeWidth * 0.55; // base track thinner than progress
+
+  // Arc length of the full semi-circle
+  const fullArcLen = Math.PI * radius;
+
+  // Helper to get cartesian point on the arc
+  // angle: 0 = right side, PI = left side  (standard math convention)
+  // SVG y-axis is inverted, so we use cy - r*sin
+  const arcX = (angle: number) => cx + radius * Math.cos(angle);
+  const arcY = (angle: number) => cy - radius * Math.sin(angle);
+
+  // Full semi-circle path from left (PI) to right (0)
+  const trackPath = [
+    `M ${arcX(Math.PI).toFixed(2)} ${arcY(Math.PI).toFixed(2)}`,
+    `A ${radius.toFixed(2)} ${radius.toFixed(2)} 0 0 1 ${arcX(0).toFixed(2)} ${arcY(0).toFixed(2)}`,
+  ].join(" ");
+
+  // Progress arc — same path, but we use strokeDasharray to clip it
+  // dashArray = [filled, gap]
+  const filledLen = animFraction * fullArcLen;
+  const gapLen = fullArcLen - filledLen;
+
+  // End-marker: angle where the progress stops
+  const progAngle = Math.PI * (1 - animFraction);
+  const markerHalf = strokeWidth * 0.45;
+  const mdx = Math.cos(progAngle);
+  const mdy = -Math.sin(progAngle); // SVG y inverted
+  const mX1 = cx + (radius - markerHalf) * mdx;
+  const mY1 = cy + (radius - markerHalf) * mdy;
+  const mX2 = cx + (radius + markerHalf) * mdx;
+  const mY2 = cy + (radius + markerHalf) * mdy;
+
+  return (
+    <Svg width={size} height={svgH} viewBox={`0 0 ${size} ${svgH}`}>
+      <Defs>
+        <LinearGradient id="gaugeGrad" x1="0" y1="0" x2="1" y2="0">
+          <Stop offset="0" stopColor="#3B82F6" stopOpacity="1" />
+          <Stop offset="0.5" stopColor="#6366F1" stopOpacity="1" />
+          <Stop offset="1" stopColor="#8B5CF6" stopOpacity="1" />
+        </LinearGradient>
+      </Defs>
+
+      {/* Base track arc (thinner, light gray) */}
+      <Path
+        d={trackPath}
+        fill="none"
+        stroke="rgba(100,116,139,0.12)"
+        strokeWidth={trackThickness}
+        strokeLinecap="round"
+      />
+
+      {/* Progress arc (thicker, gradient, dash-clipped for smooth animation) */}
+      {animFraction > 0.003 && (
+        <Path
+          d={trackPath}
+          fill="none"
+          stroke="url(#gaugeGrad)"
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={`${filledLen.toFixed(2)}, ${gapLen.toFixed(2)}`}
+        />
+      )}
+
+      {/* End-marker tick at progress stop */}
+      {animFraction > 0.03 && animFraction < 0.97 && (
+        <Path
+          d={`M ${mX1.toFixed(2)} ${mY1.toFixed(2)} L ${mX2.toFixed(2)} ${mY2.toFixed(2)}`}
+          stroke="rgba(100,116,139,0.3)"
+          strokeWidth={2}
+          strokeLinecap="round"
+        />
+      )}
+    </Svg>
+  );
+}
+
+// ─── Premium Total Sales Gauge Card ────────────────────────────
+function PremiumTotalSalesCard({
+  salesList,
+  countData,
+  hourlyList,
+}: {
+  salesList: any[];
+  countData: any;
+  hourlyList: any[];
+}) {
+  const { colors, isDark } = useTheme();
+  const { Animated: RNAnimated, Easing: RNEasing } = require("react-native");
+
+  // ── Extract total sales from dashBoardSalesList where hours === "Total " ──
+  const totalEntry = (salesList || []).find(
+    (item: any) => (item.hours || "").trim().toLowerCase() === "total",
+  );
+  const totalPaidAmt = totalEntry?.paidAmount || 0;
+
+  // ── Sales amount counter animation ──
+  const [animVal, setAnimVal] = useState(0);
+  useEffect(() => {
+    if (totalPaidAmt === 0) {
+      setAnimVal(0);
+      return;
+    }
+    const anim = new RNAnimated.Value(0);
+    const id = anim.addListener(({ value }: { value: number }) => {
+      setAnimVal(Math.round(value));
+    });
+    RNAnimated.timing(anim, {
+      toValue: totalPaidAmt,
+      duration: 950,
+      easing: RNEasing.out(RNEasing.cubic),
+      useNativeDriver: false,
+    }).start();
+    return () => anim.removeListener(id);
+  }, [totalPaidAmt]);
+
+  const formattedTotal =
+    totalPaidAmt > 0 && animVal > 0 ? `₹${animVal.toLocaleString()}` : "₹0";
+
+  // ── Progress (gauge fill ratio) ──
+  // Calculate a meaningful progress percentage:
+  // Use the highest individual entry (non-total) paidAmount as the max reference.
+  // This way the total sales is always >= max entry, giving a ratio < 1.
+  // Example: if hourly data has max ₹500 and total is ₹1904,
+  //          then progress = 1904 / (1904 * some_scale) — we use a
+  //          dynamic max to produce a visually meaningful gauge.
+
+  let progressRatio = 0;
+
+  if (totalPaidAmt > 0) {
+    // Collect individual (non-total) entries
+    const nonTotalEntries = (salesList || []).filter(
+      (item: any) => (item.hours || "").trim().toLowerCase() !== "total",
+    );
+    // Also check hourlyList for finer-grained max
+    const hourlyEntries = (hourlyList || []).filter(
+      (item: any) => (item.hours || "").trim().toLowerCase() !== "total",
+    );
+
+    // Find the highest individual paidAmount across all entries
+    const allEntries = [...nonTotalEntries, ...hourlyEntries];
+    const maxEntryValue = allEntries.reduce(
+      (max: number, e: any) => Math.max(max, e.paidAmount || 0),
+      0,
+    );
+
+    if (maxEntryValue > 0 && maxEntryValue < totalPaidAmt) {
+      // Total / (Total + MaxEntry) gives a ratio that's always < 1
+      // and scales meaningfully with data distribution
+      progressRatio = totalPaidAmt / (totalPaidAmt + maxEntryValue);
+    } else if (nonTotalEntries.length > 1) {
+      // Multiple entries: use count-based heuristic
+      // More entries with data = higher achievement
+      const entriesWithSales = nonTotalEntries.filter(
+        (e: any) => (e.paidAmount || 0) > 0,
+      ).length;
+      progressRatio = Math.min(
+        entriesWithSales / Math.max(nonTotalEntries.length, 1),
+        0.95,
+      );
+    } else {
+      // Single entry or no breakdown — use a moderate default
+      progressRatio = 0.65;
+    }
+
+    // Clamp to [0.08, 0.95] for visual clarity
+    progressRatio = Math.max(0.08, Math.min(progressRatio, 0.95));
+  }
+  // When totalPaidAmt is 0, progressRatio stays 0 → arc at starting position
+
+  const progressPct = Math.round(progressRatio * 100);
+
+  // ── Card press scale ──
+  const [scaleAnim] = useState(new RNAnimated.Value(1));
+  const handlePressIn = () =>
+    RNAnimated.spring(scaleAnim, {
+      toValue: 0.97,
+      useNativeDriver: true,
+    }).start();
+  const handlePressOut = () =>
+    RNAnimated.spring(scaleAnim, {
+      toValue: 1,
+      friction: 4,
+      tension: 40,
+      useNativeDriver: true,
+    }).start();
+
+  // Gauge size — responsive to full card width
+  const [cardWidth, setCardWidth] = useState(0);
+  const gaugeSize =
+    cardWidth > 0 ? Math.min(cardWidth - wp(40), wp(280)) : wp(260);
+  const strokeW = wp(20);
+
+  return (
+    <Card style={s.premiumCardOverride}>
+      <Pressable onPressIn={handlePressIn} onPressOut={handlePressOut}>
+        <RNAnimated.View
+          style={[s.premiumCardContent, { transform: [{ scale: scaleAnim }] }]}
+          onLayout={(e: LayoutChangeEvent) =>
+            setCardWidth(e.nativeEvent.layout.width)
+          }
+        >
+          {/* ── Header row ── */}
+          <View style={s.gaugeHeaderRow}>
+            <Text
+              style={[s.premiumTitleGauge, { color: colors.textSecondary }]}
+            >
+              Total Sales
+            </Text>
+            <View style={[s.gaugeBadge, { backgroundColor: colors.blueBg }]}>
+              <Feather name="trending-up" size={ms(12)} color={colors.blue} />
+              <Text style={[s.gaugeBadgeText, { color: colors.blue }]}>
+                Sales
+              </Text>
+            </View>
+          </View>
+
+          {/* ── Amount ── */}
+          <Text style={[s.premiumAmount, { color: colors.textPrimary }]}>
+            {formattedTotal}
+          </Text>
+          <Text style={[s.premiumSubLabel, { color: colors.textTertiary }]}>
+            Total Paid Amount
+          </Text>
+
+          {/* ── Gauge ── */}
+          <View style={s.gaugeSVGWrapper}>
+            {cardWidth > 0 && (
+              <SemiCircularGauge
+                progress={progressRatio}
+                size={gaugeSize}
+                strokeWidth={strokeW}
+              />
+            )}
+          </View>
+
+          {/* ── Percentage label below gauge ── */}
+          <View style={s.gaugeBottomRow}>
+            <Text style={[s.gaugePctText, { color: "#6366F1" }]}>
+              {progressPct}%
+            </Text>
+            <Text
+              style={[s.gaugeAchievedText, { color: colors.textSecondary }]}
+            >
+              {totalPaidAmt > 0 ? "Achieved so far" : "No Sales Yet"}
+            </Text>
+          </View>
+        </RNAnimated.View>
+      </Pressable>
+    </Card>
+  );
+}
+
 // ─── Payment Pie Chart (Modern) ────────────────────────────
 
 function SalesChartSection({
@@ -997,10 +1318,26 @@ function SalesChartSection({
 
   const formatXLabel = (val: string, currentPeriod: "sales" | "hourly") => {
     if (!val) return "-";
-    const str = val.toString();
+    const str = val.toString().trim();
 
     if (currentPeriod === "hourly") {
-      // Backend typically returns hours like "14", "14:00", etc. Let's make it 12H am/pm format if possible
+      // Handle time-range strings like "12 PM to 1 PM" or "12:00 - 13:00"
+      const rangeMatch = str.match(
+        /(\d+)\s*(?:PM|AM|pm|am)?\s*(?:to|-|–)\s*(\d+)\s*(PM|AM|pm|am)?/i,
+      );
+      if (rangeMatch) {
+        const startH = parseInt(rangeMatch[1], 10);
+        const endH = parseInt(rangeMatch[2], 10);
+        const suffix = rangeMatch[3] || "";
+        const fmtH = (h: number) => {
+          const ampm = h >= 12 && h < 24 ? "PM" : "AM";
+          return `${h % 12 || 12}${ampm}`;
+        };
+        return suffix
+          ? `${startH % 12 || 12}-${endH % 12 || 12} ${suffix.toUpperCase()}`
+          : `${fmtH(startH)}-${fmtH(endH)}`;
+      }
+      // Single hour like "14", "14:00"
       const numMatch = str.match(/^(\d+)/);
       if (numMatch) {
         const num = parseInt(numMatch[1], 10);
@@ -1010,21 +1347,29 @@ function SalesChartSection({
           return `${h} ${ampm}`;
         }
       }
-      return str;
+      return toTitleCase(str);
     }
 
-    // Replace API shorthand strings with their full descriptive names
-    const orderTypesMap: Record<string, string> = {
+    // ── "sales" period ──
+    // Map known API shorthands to clean, readable labels
+    const labelsMap: Record<string, string> = {
       ret: "Retail",
       can: "Cancelled",
       com: "Complimentary",
       tot: "Total",
+      "cancel bills": "Cancel Bills",
+      "compliment bills": "Complimentary",
+      "complimentary bills": "Complimentary",
+      "whole sales vendor": "Wholesale",
+      "wholesale vendor": "Wholesale",
+      "whole sales": "Wholesale",
+      wholesale: "Wholesale",
     };
 
     const lowerStr = str.toLowerCase().trim();
-    if (orderTypesMap[lowerStr]) return orderTypesMap[lowerStr];
+    if (labelsMap[lowerStr]) return labelsMap[lowerStr];
 
-    // For 'sales' period, ensure we use standard abbreviations (Mon, Tue, Wed) cleanly
+    // Day name mappings
     const daysMap: Record<string, string> = {
       sunday: "Sun",
       monday: "Mon",
@@ -1034,14 +1379,24 @@ function SalesChartSection({
       friday: "Fri",
       saturday: "Sat",
     };
-
     if (daysMap[lowerStr]) return daysMap[lowerStr];
 
-    // Return full string so descriptive types like "Retail" don't get truncated
-    return str;
+    // Fallback: apply Title Case to any unrecognized label
+    return toTitleCase(str);
   };
 
-  const activeData = period === "sales" ? salesData || [] : hourlyData || [];
+  /** Convert a string to Title Case: capitalize the first letter of each word */
+  const toTitleCase = (s: string) =>
+    s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+
+  // For sales/overview, exclude the "Total" entry (it's shown in the gauge card)
+  const rawData = period === "sales" ? salesData || [] : hourlyData || [];
+  const activeData =
+    period === "sales"
+      ? rawData.filter(
+          (d: any) => (d.hours || "").trim().toLowerCase() !== "total",
+        )
+      : rawData;
   const hasData = activeData.length > 0;
   const chartData = hasData
     ? activeData.map((d: any) => ({
@@ -1069,7 +1424,7 @@ function SalesChartSection({
       ? "No hourly sales data available"
       : "No sales data available for this period";
 
-  const chartH = hp(180);
+  const chartH = hp(200);
   const ySteps = 4;
   const yLabels = Array.from(
     { length: ySteps + 1 },
@@ -1160,8 +1515,10 @@ function SalesChartSection({
 
           {/* Chart area — measure actual width */}
           <View
-            style={{ flex: 1, overflow: "hidden" }}
-            onLayout={(e) => setAreaWidth(e.nativeEvent.layout.width)}
+            style={{ flex: 1 }}
+            onLayout={(e: LayoutChangeEvent) =>
+              setAreaWidth(e.nativeEvent.layout.width)
+            }
           >
             {areaWidth > 0 && (
               <>
@@ -1183,7 +1540,7 @@ function SalesChartSection({
                       const pad = wp(16);
                       const innerW = areaWidth - pad * 2;
                       const topPad = hp(8);
-                      const bottomPad = hp(24);
+                      const bottomPad = hp(30);
                       const innerH = chartH - topPad - bottomPad;
                       const stepX =
                         chartData.length > 1
@@ -1288,28 +1645,74 @@ function SalesChartSection({
                               />
                             </G>
                           ))}
-                          {/* X-axis labels rendered inside SVG */}
-                          {pts.map((p, i) => {
+                        </Svg>
+                      );
+                    })()}
+                    {/* X-axis labels — fixed responsive layout */}
+                    {(() => {
+                      const pad = wp(16);
+                      const innerW = areaWidth - pad * 2;
+                      const stepX =
+                        chartData.length > 1
+                          ? innerW / (chartData.length - 1)
+                          : 0;
+
+                      return (
+                        <View
+                          style={{
+                            width: areaWidth,
+                            paddingTop: hp(8),
+                            paddingBottom: hp(6),
+                            height: hp(30),
+                          }}
+                        >
+                          {chartData.map((d, i) => {
+                            const maxLabels = 6;
+
+                            const skipN =
+                              chartData.length > maxLabels
+                                ? Math.ceil(chartData.length / maxLabels)
+                                : 1;
+
                             const showLabel =
-                              chartData.length <= 6 ||
-                              i % Math.ceil(chartData.length / 5) === 0 ||
+                              chartData.length <= maxLabels ||
+                              i % skipN === 0 ||
                               i === chartData.length - 1;
-                            if (!showLabel) return null;
+
+                            const xPos = pad + i * stepX;
+
+                            const labelW = wp(72); // increased width for long labels
+
                             return (
-                              <SvgText
+                              <View
                                 key={`xl-${i}`}
-                                x={p.x}
-                                y={chartH - hp(4)}
-                                fontSize={ms(10)}
-                                fontWeight="600"
-                                fill={colors.textTertiary}
-                                textAnchor="middle"
+                                style={{
+                                  position: "absolute",
+                                  left: xPos - labelW / 2,
+                                  width: labelW,
+                                  alignItems: "center",
+                                }}
                               >
-                                {chartData[i].label}
-                              </SvgText>
+                                {showLabel && (
+                                  <Text
+                                    style={[
+                                      s.xLabel,
+                                      {
+                                        color: colors.textTertiary,
+                                        fontSize: ms(8.5),
+                                        textAlign: "center",
+                                      },
+                                    ]}
+                                    numberOfLines={1} // prevent wrapping
+                                    ellipsizeMode="tail"
+                                  >
+                                    {d.label}
+                                  </Text>
+                                )}
+                              </View>
                             );
                           })}
-                        </Svg>
+                        </View>
                       );
                     })()}
                   </>
@@ -1394,28 +1797,48 @@ function SalesChartSection({
                       })}
                     </View>
 
-                    {/* X labels */}
+                    {/* X labels — skip some when many bars to prevent overlap */}
                     <View style={s.xAxis}>
-                      {chartData.map((d, i) => (
-                        <View
-                          key={i}
-                          style={{
-                            width: barWidth + barGap,
-                            alignItems: "center",
-                            justifyContent: "flex-start",
-                            paddingTop: hp(4),
-                          }}
-                        >
-                          <Text
-                            style={[s.xLabel, { color: colors.textTertiary }]}
-                            numberOfLines={2}
-                            adjustsFontSizeToFit
-                            minimumFontScale={0.8}
+                      {chartData.map((d, i) => {
+                        const maxVisibleLabels = Math.max(
+                          Math.floor(areaWidth / wp(50)),
+                          6,
+                        );
+                        const skipEvery =
+                          chartData.length > maxVisibleLabels
+                            ? Math.ceil(chartData.length / maxVisibleLabels)
+                            : 1;
+                        const showLabel =
+                          chartData.length <= maxVisibleLabels ||
+                          i % skipEvery === 0 ||
+                          i === chartData.length - 1;
+
+                        return (
+                          <View
+                            key={i}
+                            style={{
+                              width: barWidth + barGap,
+                              alignItems: "center",
+                              justifyContent: "flex-start",
+                              paddingTop: hp(4),
+                            }}
                           >
-                            {d.label}
-                          </Text>
-                        </View>
-                      ))}
+                            {showLabel ? (
+                              <Text
+                                style={[
+                                  s.xLabel,
+                                  { color: colors.textTertiary },
+                                ]}
+                                numberOfLines={2}
+                                adjustsFontSizeToFit
+                                minimumFontScale={0.75}
+                              >
+                                {d.label}
+                              </Text>
+                            ) : null}
+                          </View>
+                        );
+                      })}
                     </View>
                   </>
                 )}
@@ -2239,6 +2662,72 @@ function ItemRankingSection({
 
 // ─── Styles ─────────────────────────────────────────────────
 const s = StyleSheet.create({
+  // Premium Total Sales Gauge Card
+  premiumCardOverride: {
+    padding: wp(16),
+  },
+  premiumCardContent: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  gaugeHeaderRow: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: hp(12),
+  },
+  premiumTitleGauge: {
+    fontSize: ms(16),
+    fontWeight: "700",
+    letterSpacing: 0.1,
+  },
+  gaugeBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: wp(10),
+    paddingVertical: hp(5),
+    borderRadius: wp(20),
+    gap: wp(4),
+  },
+  gaugeBadgeText: {
+    fontSize: ms(12),
+    fontWeight: "700",
+  },
+  premiumAmount: {
+    fontSize: ms(38),
+    fontWeight: "800",
+    letterSpacing: -1.2,
+    alignSelf: "flex-start",
+  },
+  premiumSubLabel: {
+    fontSize: ms(13),
+    fontWeight: "500",
+    alignSelf: "flex-start",
+    marginBottom: hp(8),
+  },
+  gaugeSVGWrapper: {
+    alignItems: "center",
+    width: "100%",
+    marginTop: hp(4),
+    marginBottom: hp(-8),
+  },
+  gaugeBottomRow: {
+    alignItems: "center",
+    marginBottom: hp(4),
+    marginTop: hp(4),
+  },
+  gaugePctText: {
+    fontSize: ms(32),
+    fontWeight: "800",
+    letterSpacing: -0.5,
+  },
+  gaugeAchievedText: {
+    fontSize: ms(14),
+    fontWeight: "600",
+    marginTop: hp(2),
+  },
+
   // Header
   header: {
     flexDirection: "row",
@@ -2325,18 +2814,21 @@ const s = StyleSheet.create({
     textAlign: "center",
     paddingVertical: hp(20),
   },
-  branchItem: {
+  dropdownCloseBtn: {
+    padding: ms(4),
+  },
+  branchOptionRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: hp(14),
-    paddingHorizontal: wp(12),
-    borderRadius: wp(8),
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingVertical: hp(16),
+    paddingHorizontal: wp(16),
+    borderRadius: wp(12),
+    marginBottom: hp(4),
   },
-  branchItemText: {
-    fontSize: ms(14),
-    fontWeight: "500",
+  branchOptionText: {
+    fontSize: ms(15),
+    flex: 1,
   },
 
   // Greeting
@@ -2344,18 +2836,22 @@ const s = StyleSheet.create({
   greetingTitle: { fontSize: ms(24), fontWeight: "700", letterSpacing: -0.3 },
   greetingSubtitle: { fontSize: ms(14), marginTop: hp(6) },
 
-  // (Date Filter styles are now inside CalendarPicker component)
+  // (Date Filter styles are now inside DateRangePicker component)
 
   // KPI
   kpiGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
-    gap: wp(14),
+    gap: wp(16),
     marginTop: hp(8),
     marginBottom: hp(4),
   },
-  kpiCardWidth: { width: "48%" },
+  kpiCardWidth: {
+    width: "47%",
+    flexGrow: 1,
+    maxWidth: "48.5%",
+  },
   kpiTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -2365,13 +2861,14 @@ const s = StyleSheet.create({
   animatedKpiCard: {
     padding: wp(16),
     borderRadius: wp(20),
+    minHeight: hp(160),
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.02,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
     borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.03)", // subtle border for modern feel
+    borderColor: "rgba(0,0,0,0.04)",
   },
   kpiIconWrap: {
     width: wp(38),
@@ -2394,6 +2891,7 @@ const s = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "flex-end",
     marginTop: hp(12),
+    flex: 1,
   },
   kpiTextWrap: {
     flex: 1,
@@ -2439,12 +2937,13 @@ const s = StyleSheet.create({
     flexDirection: "row",
     marginTop: hp(24),
     marginBottom: hp(8),
+    marginHorizontal: hp(8),
   },
   yAxis: {
     justifyContent: "space-between",
     alignItems: "flex-end",
     marginRight: wp(12),
-    paddingBottom: hp(32), // reserve space for multiline x-axis labels
+    paddingBottom: hp(40), // reserve space for multiline x-axis labels
   },
   yLabel: { fontSize: ms(10), fontWeight: "600" },
   chartGridArea: {
@@ -2471,10 +2970,10 @@ const s = StyleSheet.create({
     paddingLeft: wp(4),
   },
   xLabel: {
-    fontSize: ms(10),
+    fontSize: ms(11),
     fontWeight: "600",
     textAlign: "center",
-    lineHeight: ms(14),
+    lineHeight: ms(15),
   },
 
   // Payment Breakdown

@@ -21,7 +21,14 @@ import {
 import Svg, { Circle, Path } from "react-native-svg";
 import { getBranchMaster } from "../api/branchService";
 import { getSalesDetails } from "../api/dashboardService";
-import { Card, GradientHeader, ScreenWrapper, SectionHeader } from "../components";
+import { 
+  Card, 
+  GradientHeader, 
+  ScreenWrapper, 
+  SectionHeader,
+  DateRangePicker,
+  type DateRangePickerRef
+} from "../components";
 import { useAuth } from "../context/AuthContext";
 import { useDateFilter } from "../context/DateFilterContext";
 import { RootStackParamList } from "../navigation/AppNavigator";
@@ -56,11 +63,13 @@ export default function InventoryScreen() {
   const { colors } = useTheme();
   const navigation = useNavigation<InventoryScreenNavigationProp>();
   const { authData } = useAuth();
-  const { startDate, endDate } = useDateFilter();
+  const { startDate, endDate, dateRange, activeFilter, setDateFilter } = useDateFilter();
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const calendarRef = React.useRef<DateRangePickerRef>(null);
 
   const [products, setProducts] = useState<InventorySalesItem[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<
@@ -238,93 +247,40 @@ export default function InventoryScreen() {
 
   const renderIcon = (name: string) => {
     const lower = (name || '').toLowerCase();
-    if (lower.includes("burger"))
-      return (
-        <MaterialCommunityIcons
-          name="hamburger"
-          size={ms(24)}
-          color={colors.primary}
-        />
-      );
     if (
-      lower.includes("cake") ||
-      lower.includes("dessert") ||
-      lower.includes("pastry") ||
-      lower.includes("sweets")
-    )
-      return (
-        <MaterialCommunityIcons
-          name="cake-variant"
-          size={ms(24)}
-          color={colors.primary}
-        />
-      );
-    if (
-      lower.includes("lunch") ||
-      lower.includes("meal") ||
-      lower.includes("dinner") ||
-      lower.includes("breakfast") ||
-      lower.includes("thali")
-    )
-      return (
-        <MaterialCommunityIcons
-          name="food-fork-drink"
-          size={ms(24)}
-          color={colors.primary}
-        />
-      );
-    if (lower.includes("pizza"))
-      return (
-        <MaterialCommunityIcons
-          name="pizza"
-          size={ms(24)}
-          color={colors.primary}
-        />
-      );
-    if (
-      lower.includes("drink") ||
+      lower.includes("coffee") ||
+      lower.includes("tea") ||
       lower.includes("juice") ||
+      lower.includes("drink") ||
+      lower.includes("beverage") ||
+      lower.includes("water") ||
       lower.includes("milk") ||
-      lower.includes("water")
-    )
+      lower.includes("shake") ||
+      lower.includes("mojito")
+    ) {
       return (
         <MaterialCommunityIcons
-          name="cup-water"
+          name="cup"
           size={ms(24)}
           color={colors.primary}
         />
       );
-    if (lower.includes("tea") || lower.includes("coffee"))
-      return (
-        <MaterialCommunityIcons
-          name="coffee"
-          size={ms(24)}
-          color={colors.primary}
-        />
-      );
-    if (lower.includes("ice cream"))
-      return (
-        <MaterialCommunityIcons
-          name="ice-cream"
-          size={ms(24)}
-          color={colors.primary}
-        />
-      );
-    if (lower.includes("chicken") || lower.includes("meat"))
-      return (
-        <MaterialCommunityIcons
-          name="food-drumstick"
-          size={ms(24)}
-          color={colors.primary}
-        />
-      );
-
-    return <Feather name="box" size={ms(24)} color={colors.primary} />;
+    }
+    return (
+      <MaterialCommunityIcons 
+        name="silverware-fork-knife" 
+        size={ms(24)} 
+        color={colors.primary} 
+      />
+    );
   };
 
   const renderSummaryCards = () => {
+    const uniqueCategories = new Set(products.map(p => p.categoryName)).size;
+    const totalItems = products.reduce((acc, curr) => acc + curr.salesCount, 0);
+
     return (
-      <View>
+      <View style={{ marginBottom: hp(16) }}>
         <SectionHeader title="Inventory Based On Sales" />
         <ScrollView
           horizontal
@@ -335,15 +291,16 @@ export default function InventoryScreen() {
             <View
               style={[styles.iconBox, { backgroundColor: colors.blue + "20" }]}
             >
-              <Feather name="box" size={ms(18)} color={colors.blue} />
+              <Feather name="box" size={ms(24)} color={colors.blue} />
             </View>
-            <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>
-              {products.length}
-            </Text>
             <Text
               style={[styles.summaryLabel, { color: colors.textSecondary }]}
             >
-              Items Sold
+              Categories Sold
+            </Text>
+            <Text style={[styles.summaryValue, { color: colors.textPrimary, marginTop: hp(4) }]}>
+              {uniqueCategories}
+              <Text style={{ fontSize: ms(14), color: colors.textTertiary, fontWeight: '500' }}> Categories</Text>
             </Text>
           </Card>
           <Card style={styles.summaryCard}>
@@ -352,17 +309,18 @@ export default function InventoryScreen() {
             >
               <Feather
                 name="shopping-cart"
-                size={ms(18)}
+                size={ms(24)}
                 color={colors.green}
               />
             </View>
-            <Text style={[styles.summaryValue, { color: colors.textPrimary }]}>
-              {products.reduce((acc, curr) => acc + curr.salesCount, 0)}
-            </Text>
             <Text
               style={[styles.summaryLabel, { color: colors.textSecondary }]}
             >
-              Total Qty Sold
+              Items Sold
+            </Text>
+            <Text style={[styles.summaryValue, { color: colors.textPrimary, marginTop: hp(4) }]}>
+              {totalItems}
+              <Text style={{ fontSize: ms(14), color: colors.textTertiary, fontWeight: '500' }}> Items</Text>
             </Text>
           </Card>
         </ScrollView>
@@ -371,8 +329,6 @@ export default function InventoryScreen() {
   };
 
   const renderInsights = () => {
-    if (products.length === 0) return null;
-
     // Aggregate by category
     const categoryDataMap = products.reduce((acc, curr) => {
       const cat = curr.categoryName || "Other";
@@ -402,7 +358,7 @@ export default function InventoryScreen() {
 
     const pieColors = ["#3B82F6", "#F59E0B", "#10B981", "#8B5CF6", "#EC4899", "#94A3B8"];
 
-    const size = wp(130);
+    const size = wp(140);
     const strokeWidth = wp(20);
     const radius = (size - strokeWidth) / 2;
     const center = size / 2;
@@ -420,24 +376,49 @@ export default function InventoryScreen() {
       return <Feather name="grid" size={ms(16)} color={color} />;
     };
 
+    if (totalItems === 0 || products.length === 0) {
+      return (
+        <View style={{ marginBottom: hp(16) }}>
+          <View style={styles.insightsContainer}>
+            <Card style={[styles.donutCard, { padding: wp(16) }]}>
+              <View style={styles.donutHeader}>
+                <View style={[styles.donutIconWrap, { backgroundColor: colors.primary + "1A" }]}>
+                  <Feather name="pie-chart" size={ms(20)} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.donutTitle, { color: colors.textPrimary }]}>
+                    Sales Distribution by Product Category
+                  </Text>
+                  <Text style={[styles.donutSub, { color: colors.textTertiary }]}>
+                    Which product categories sell the most
+                  </Text>
+                </View>
+              </View>
+              <View style={{ alignItems: "center", justifyContent: "center", paddingVertical: hp(30) }}>
+                <Text style={{ color: colors.textSecondary, fontSize: ms(14) }}>
+                  No category sales data available
+                </Text>
+              </View>
+            </Card>
+          </View>
+        </View>
+      );
+    }
+
     return (
-      <View>
-        <SectionHeader 
-          title="Inventory Insights"
-          rightElement={<Text style={{ fontSize: ms(12), color: colors.textTertiary }}>Quick view</Text>}
-        />
+      <View style={{ marginBottom: hp(16) }}>
         <View style={styles.insightsContainer}>
-          <Card style={styles.donutCard}>
+          <Card style={[styles.donutCard, { padding: wp(16) }]}>
             <View style={styles.donutHeader}>
               <View style={[styles.donutIconWrap, { backgroundColor: colors.primary + "1A" }]}>
                 <Feather name="pie-chart" size={ms(20)} color={colors.primary} />
               </View>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={[styles.donutTitle, { color: colors.textPrimary }]}>
-                  Inventory Distribution
+                  Sales Distribution by Product Category
                 </Text>
                 <Text style={[styles.donutSub, { color: colors.textTertiary }]}>
-                  By product category
+                  Which product categories sell the most
                 </Text>
               </View>
             </View>
@@ -484,12 +465,12 @@ export default function InventoryScreen() {
                     })
                   )}
                 </Svg>
-                <View style={[styles.chartCenterOverlay, { zIndex: -1 }]}>
-                  <Text style={[styles.chartTotalText, { color: colors.textPrimary }]} numberOfLines={1}>
-                    {totalItems}
+                <View style={[styles.chartCenterOverlay, { zIndex: -1, width: size, height: size }]}>
+                  <Text style={[styles.chartTotalText, { color: colors.textPrimary, fontSize: size * 0.16 }]} numberOfLines={1}>
+                    {totalItems > 9999 ? '9999+' : totalItems}
                   </Text>
-                  <Text style={[styles.chartTotalLabel, { color: colors.textSecondary }]}>
-                    Qty
+                  <Text style={[styles.chartTotalLabel, { color: colors.textSecondary, fontSize: size * 0.09 }]}>
+                    Items Sold
                   </Text>
                 </View>
               </View>
@@ -506,15 +487,15 @@ export default function InventoryScreen() {
                         {renderIconForCategory(d.category, color)}
                       </View>
                       <View style={styles.legendTextContent}>
-                        <Text style={[styles.legendCategory, { color: colors.textPrimary }]} numberOfLines={1}>
+                        <Text style={[styles.legendCategory, { color: colors.textPrimary }]} >
                           {d.category}
                         </Text>
-                        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                          <Text style={[styles.legendValue, { color: colors.textSecondary }]}>
-                            {d.count} qty
-                          </Text>
-                          <Text style={{ fontSize: ms(10), color: colors.textTertiary, fontWeight: "600" }}>{percentage}%</Text>
-                        </View>
+                        <Text style={[styles.legendValue, { color: colors.textSecondary }]} numberOfLines={1}>
+                          {d.count} qty
+                        </Text>
+                        <Text style={[styles.legendPercent, { color: colors.textTertiary }]}>
+                          {percentage}%
+                        </Text>
                       </View>
                     </View>
                   );
@@ -553,7 +534,7 @@ export default function InventoryScreen() {
             />
             <TextInput
               style={[styles.searchInput, { color: colors.textPrimary }]}
-              placeholder="Search items..."
+              placeholder="Search products..."
               placeholderTextColor={colors.placeholder}
               value={searchQuery}
               onChangeText={setSearchQuery}
@@ -668,7 +649,7 @@ export default function InventoryScreen() {
                 <Text
                   style={[styles.dataLabel, { color: colors.textSecondary }]}
                 >
-                  Total Revenue
+                  Sales Value
                 </Text>
                 <Text style={[styles.dataValue, { color: colors.textPrimary }]}>
                   ₹{item.revenue.toLocaleString()}
@@ -684,7 +665,17 @@ export default function InventoryScreen() {
   if (loading && !refreshing) {
     return (
       <ScreenWrapper edges={['bottom', 'left', 'right']}>
-        <GradientHeader title="Inventory" onBack={() => navigation.goBack()} />
+        <GradientHeader 
+          title="Inventory" 
+          onCalendarPress={() => calendarRef.current?.openModal()} 
+        />
+        <DateRangePicker
+          ref={calendarRef}
+          hideChip={true}
+          dateRange={dateRange}
+          activeFilter={activeFilter}
+          onDateRangeChange={setDateFilter}
+        />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={{ marginTop: hp(12), color: colors.textSecondary }}>
@@ -698,7 +689,17 @@ export default function InventoryScreen() {
   if (errorMsg) {
     return (
       <ScreenWrapper edges={['bottom', 'left', 'right']}>
-        <GradientHeader title="Inventory" onBack={() => navigation.goBack()} />
+        <GradientHeader 
+          title="Inventory" 
+          onCalendarPress={() => calendarRef.current?.openModal()} 
+        />
+        <DateRangePicker
+          ref={calendarRef}
+          hideChip={true}
+          dateRange={dateRange}
+          activeFilter={activeFilter}
+          onDateRangeChange={setDateFilter}
+        />
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: hp(40) }}>
           <Feather name="alert-circle" size={ms(48)} color={colors.red} style={{ marginBottom: hp(16) }} />
           <Text style={{ textAlign: 'center', color: colors.textPrimary, fontSize: ms(16), marginBottom: hp(24) }}>
@@ -717,7 +718,17 @@ export default function InventoryScreen() {
 
   return (
     <ScreenWrapper edges={['bottom', 'left', 'right']}>
-      <GradientHeader title="Inventory" onBack={() => navigation.goBack()} />
+      <GradientHeader 
+        title="Inventory" 
+        onCalendarPress={() => calendarRef.current?.openModal()} 
+      />
+      <DateRangePicker
+        ref={calendarRef}
+        hideChip={true}
+        dateRange={dateRange}
+        activeFilter={activeFilter}
+        onDateRangeChange={setDateFilter}
+      />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -740,15 +751,20 @@ export default function InventoryScreen() {
           ListHeaderComponent={
             <View style={{ zIndex: 10 }}>
               <View style={{ zIndex: 1 }}>{renderSummaryCards()}</View>
-              <View style={{ zIndex: 3 }}>{renderFilters()}</View>
               <View style={{ zIndex: 2 }}>{renderInsights()}</View>
+              {products.length > 0 && (
+                <View style={{ zIndex: 3 }}>
+                  <SectionHeader title="Inventory List" />
+                  {renderFilters()}
+                </View>
+              )}
             </View>
           }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Feather name="box" size={ms(48)} color={colors.textTertiary} />
             <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-              No items found.
+              No sales data available for the selected date
             </Text>
           </View>
         }
@@ -783,18 +799,17 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingBottom: hp(60),
-    paddingTop: hp(12),
+    paddingTop: hp(16),
   },
   hScrollContent: {
     paddingHorizontal: wp(16),
     paddingBottom: hp(16),
     paddingTop: hp(4),
-    gap: wp(12),
+    gap: wp(16),
   },
   summaryCard: {
-    width: wp(140),
-    padding: ms(16),
-    marginRight: wp(12),
+    width: wp(160),
+    padding: wp(16),
   },
   iconBox: {
     width: ms(32),
@@ -813,14 +828,14 @@ const styles = StyleSheet.create({
     fontSize: ms(12),
   },
   insightsContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: hp(16),
+    paddingHorizontal: wp(16),
   },
   donutCard: {
-    padding: ms(20),
+    padding: wp(16),
     margin: 0,
     width: "100%",
     borderRadius: ms(16),
+    overflow: 'hidden'
   },
   donutHeader: {
     flexDirection: "row",
@@ -828,16 +843,18 @@ const styles = StyleSheet.create({
     marginBottom: hp(24),
   },
   donutIconWrap: {
-    width: ms(44),
-    height: ms(44),
+    width: ms(40),
+    height: ms(40),
     borderRadius: ms(12),
     justifyContent: "center",
     alignItems: "center",
     marginRight: wp(12),
   },
   donutTitle: {
-    fontSize: ms(16),
+    fontSize: ms(15),
     fontWeight: "bold",
+    flexWrap: 'wrap',
+    flex: 1
   },
   donutSub: {
     fontSize: ms(12),
@@ -846,7 +863,8 @@ const styles = StyleSheet.create({
   donutBody: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "flex-start",
+    width: "100%",
   },
   chartWrapper: {
     alignItems: "center",
@@ -868,12 +886,13 @@ const styles = StyleSheet.create({
   },
   legendContainer: {
     flex: 1,
-    marginLeft: wp(24),
-    gap: hp(12),
+    marginLeft: wp(16),
+    gap: hp(8),
   },
   legendRow: {
     flexDirection: "row",
     alignItems: "center",
+    width: "100%",
   },
   legendIconBox: {
     width: ms(32),
@@ -881,22 +900,35 @@ const styles = StyleSheet.create({
     borderRadius: ms(8),
     justifyContent: "center",
     alignItems: "center",
-    marginRight: wp(10),
   },
   legendTextContent: {
     flex: 1,
+    marginLeft: wp(8),
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   legendCategory: {
     fontSize: ms(12),
     fontWeight: "600",
-    marginBottom: hp(2),
+    flex: 1,
+    flexWrap: "wrap",
+    paddingRight: wp(4),
   },
   legendValue: {
     fontSize: ms(12),
     fontWeight: "500",
+    width: wp(45),
+    textAlign: "right",
+  },
+  legendPercent: {
+    fontSize: ms(12),
+    fontWeight: "600",
+    width: wp(35),
+    textAlign: "right",
   },
   filtersContainer: {
-    paddingHorizontal: 16,
+    paddingHorizontal: wp(16),
     marginBottom: hp(16),
   },
   searchBox: {
@@ -949,9 +981,9 @@ const styles = StyleSheet.create({
     marginRight: wp(8),
   },
   productCard: {
-    marginHorizontal: 16,
-    marginBottom: hp(12),
-    padding: ms(16),
+    marginHorizontal: wp(16),
+    marginBottom: hp(8),
+    padding: wp(16),
   },
   productHeader: {
     flexDirection: "row",

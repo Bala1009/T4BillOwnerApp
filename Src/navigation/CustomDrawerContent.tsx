@@ -9,19 +9,18 @@ import { useAuth } from '../context/AuthContext';
 type MenuItem = {
   label: string;
   icon: string;
-  action: 'tab' | 'screen';
   target: string;
 };
 
 const MENU_ITEMS: MenuItem[] = [
-  { label: 'Dashboard',    icon: 'home',        action: 'tab',    target: 'Dashboard'       },
-  { label: 'Inventory',    icon: 'box',         action: 'tab',    target: 'Inventory'       },
-  { label: 'Orders',       icon: 'pie-chart',   action: 'tab',    target: 'PurchaseOrders'  },
-  { label: 'Performance',  icon: 'activity',    action: 'tab',    target: 'Performance'     },
+  { label: 'Dashboard',    icon: 'home',        target: 'Dashboard'       },
+  { label: 'Inventory',    icon: 'box',         target: 'Inventory'       },
+  { label: 'Orders',       icon: 'pie-chart',   target: 'PurchaseOrders'  },
+  { label: 'Performance',  icon: 'activity',     target: 'Performance'     },
 ];
 
 export default function CustomDrawerContent(props: any) {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const { authData, logout } = useAuth();
   const navigation = useNavigation<any>();
   const [showLogoutModal, setShowLogoutModal] = useState(false);
@@ -40,23 +39,13 @@ export default function CustomDrawerContent(props: any) {
 
   const activeRouteName: string = (() => {
     const state = props.state;
-    const mainTabsRoute = state?.routes?.find((r: any) => r.name === 'MainTabs');
-    if (mainTabsRoute?.state) {
-      const idx = mainTabsRoute.state.index ?? 0;
-      return mainTabsRoute.state.routeNames?.[idx] || '';
-    }
     const active = state?.routes?.[state?.index ?? 0];
     return active?.name || '';
   })();
 
   const handleItemPress = (item: MenuItem) => {
-    if (item.action === 'tab') {
-      props.navigation.closeDrawer();
-      props.navigation.navigate('MainTabs', { screen: item.target });
-    } else {
-      props.navigation.closeDrawer();
-      props.navigation.navigate(item.target);
-    }
+    props.navigation.closeDrawer();
+    props.navigation.navigate(item.target);
   };
 
   const handleLogoutPress = () => {
@@ -127,6 +116,8 @@ export default function CustomDrawerContent(props: any) {
             );
           })}
         </View>
+
+
       </DrawerContentScrollView>
 
       {/* ── Logout at Bottom ── */}
@@ -178,7 +169,7 @@ export default function CustomDrawerContent(props: any) {
                   styles.modalButton,
                   styles.modalButtonNo,
                   {
-                    backgroundColor: isDark ? colors.cardAlt : colors.cardAlt,
+                    backgroundColor: colors.cardAlt,
                     borderColor: colors.border,
                   },
                 ]}
@@ -270,6 +261,7 @@ const styles = StyleSheet.create({
     height: ms(6),
     borderRadius: ms(3),
   },
+
   logoutSection: {
     borderTopWidth: 1,
     paddingVertical: hp(8),
