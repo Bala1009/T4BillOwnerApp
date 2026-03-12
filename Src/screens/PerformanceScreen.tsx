@@ -120,7 +120,7 @@ export default function PerformanceScreen() {
   const calendarRef = useRef<DateRangePickerRef>(null);
 
   const [activeChip, setActiveChip] = useState<ChipKey>('Overall');
-  const [trendPeriod, setTrendPeriod] = useState('This Month');
+  const [trendPeriod, setTrendPeriod] = useState('Today');
   const [loading, setLoading] = useState(true);
   const [chipTransitioning, setChipTransitioning] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -182,15 +182,6 @@ export default function PerformanceScreen() {
     }
   }, [authData?.ClientID, startDate, endDate]);
 
-  useEffect(() => {
-    loadData();
-    const sub = DeviceEventEmitter.addListener('BRANCH_CHANGED', (branch) => {
-      const id = branch?.BranchID || branch?.branchID || branch?.BranchId || branch?.branchId || branch?.id || 0;
-      if (id) loadData(id);
-    });
-    return () => sub.remove();
-  }, [loadData]);
-
   /* ── Trend-specific data loading ─────────────────────────── */
   const loadTrendData = useCallback(async (period: string) => {
     if (!authData?.ClientID) return;
@@ -240,6 +231,19 @@ export default function PerformanceScreen() {
       setTrendLoading(false);
     }
   }, [authData?.ClientID]);
+
+  useEffect(() => {
+    loadData();
+    loadTrendData('Today');
+    const sub = DeviceEventEmitter.addListener('BRANCH_CHANGED', (branch) => {
+      const id = branch?.BranchID || branch?.branchID || branch?.BranchId || branch?.branchId || branch?.id || 0;
+      if (id) {
+        loadData(id);
+        loadTrendData(trendPeriod);
+      }
+    });
+    return () => sub.remove();
+  }, [loadData, loadTrendData]);
 
   /* ── Chip press with fade animation ─────────────────────── */
   const handleChipPress = (chip: ChipKey) => {
@@ -503,11 +507,17 @@ export default function PerformanceScreen() {
 
   const renderTrend = () => {
     const trendSource = trendSalesData || salesData;
-    const rawList: any[] = trendSource?.dashBoardSalesList || [];
-    const data = rawList.length > 1 ? rawList.map((d: any) => d.paidAmount || 0) : [0, 0, 0, 0, 0, 0, 0];
+    // Prefer hourly list for 'Today', otherwise use sales list
+    const hourlyList: any[] = trendSource?.dashBoardHourlyList || [];
+    const salesListRaw: any[] = trendSource?.dashBoardSalesList || [];
+    const rawList: any[] = trendPeriod === 'Today' && hourlyList.length > 0 ? hourlyList : salesListRaw;
 
-    // Build human-readable X-axis labels
-    const labels = rawList.length > 1
+    // No fallback to static data — use only dynamic API data
+    const hasData = rawList.length > 0;
+    const data = hasData ? rawList.map((d: any) => d.paidAmount || 0) : [];
+
+    // Build human-readable X-axis labels from API data only
+    const labels = hasData
       ? rawList.map((d: any, idx: number) => {
           if (!d.hours) return `Day ${idx + 1}`;
           const raw = (d.hours || '').toString().trim();
@@ -526,6 +536,15 @@ export default function PerformanceScreen() {
           };
           if (typeMap[lower]) return typeMap[lower];
 
+          // Date string → short date (e.g. "2026-03-10" → "Mar 10")
+          const dateMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+          if (dateMatch) {
+            const monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            const monthIdx = parseInt(dateMatch[2], 10) - 1;
+            const day = parseInt(dateMatch[3], 10);
+            return `${monthNames[monthIdx] || dateMatch[2]} ${day}`;
+          }
+
           // Numeric hour → 12h format (e.g. "14" → "2 PM")
           const numMatch = raw.match(/^(\d+)/);
           if (numMatch) {
@@ -539,7 +558,7 @@ export default function PerformanceScreen() {
           // Fallback for any other string — capitalize first 3 chars
           return raw.length > 6 ? raw.substring(0, 6) : raw;
         })
-      : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      : [];
 
     // ── Chart dimensions with generous breathing space ──
     const leftPad = ms(48);
@@ -614,6 +633,14 @@ export default function PerformanceScreen() {
             <View style={{ height: chartHeight, justifyContent: 'center', alignItems: 'center' }}>
               <ActivityIndicator size="small" color={colors.primary} />
               <Text style={{ marginTop: hp(8), color: colors.textSecondary, fontSize: ms(12) }}>Loading trend…</Text>
+            </View>
+          ) : !hasData || data.length < 2 ? (
+            <View style={{ height: chartHeight, justifyContent: 'center', alignItems: 'center' }}>
+              <Feather name="bar-chart-2" size={ms(36)} color={colors.textTertiary} style={{ marginBottom: hp(12), opacity: 0.4 }} />
+              <Text style={{ color: colors.textSecondary, fontSize: ms(14), fontWeight: '500' }}>No trend data available</Text>
+              <Text style={{ color: colors.textTertiary, fontSize: ms(12), marginTop: hp(4) }}>
+                {trendPeriod === 'Today' ? 'Sales data will appear as orders come in' : `No data found for ${trendPeriod.toLowerCase()}`}
+              </Text>
             </View>
           ) : (
             <Svg width={chartWidth} height={chartHeight}>
