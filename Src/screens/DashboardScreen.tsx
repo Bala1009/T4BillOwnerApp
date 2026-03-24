@@ -120,6 +120,25 @@ export default function DashboardScreen() {
       return;
     }
 
+    const branchID =
+      selectedBranch?.branchID ||
+      selectedBranch?.BranchID ||
+      selectedBranch?.BranchId ||
+      selectedBranch?.branchId ||
+      selectedBranch?.id ||
+      selectedBranch?.ID ||
+      0;
+
+    console.log("[Dashboard] Selected branchID:", branchID);
+    console.log("[Dashboard] Request Payload:", JSON.stringify({
+      branchID,
+      startDate,
+      endDate,
+      phase: "",
+      isActive: "",
+      vendorID: 0,
+    }, null, 2));
+
     console.log("[Dashboard] Fetching via global context...");
     setLocalErrorMsg(null);
 
@@ -139,6 +158,12 @@ export default function DashboardScreen() {
   // ── Fetch dashboard data when branch is selected ───────────
   useEffect(() => {
     if (selectedBranch) {
+      const bid =
+        selectedBranch?.branchID ||
+        selectedBranch?.BranchID ||
+        selectedBranch?.branchId ||
+        0;
+      console.log("[Dashboard] Branch changed → branchID:", bid, "— re-fetching...");
       // Also update context's selected branch
       globalCtx.setSelectedBranch(selectedBranch);
       fetchDashboardData();
@@ -400,7 +425,8 @@ function BranchSelectorWithConditionalRendering({
 
   // ── Handle branch selection from dropdown ──────────────────
   const handleBranchSelect = async (branch: any) => {
-    console.log("[Dashboard] Selected branch:", branch);
+    const bid = branch?.branchID || branch?.BranchID || branch?.branchId || 0;
+    console.log("[Dashboard] User selected branch:", branch?.branchName || branch?.BranchName || "unknown", "→ branchID:", bid);
     setSelectedBranch(branch);
     if (onBranchSelected) onBranchSelected(branch);
     await AsyncStorage.setItem("selectedBranch", JSON.stringify(branch));

@@ -89,7 +89,7 @@ export const DashboardProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       const data = await getSalesDetails(payload);
 
-      console.log("[DashboardContext] Response received");
+      console.log("[DashboardContext] Full Response:", JSON.stringify(data, null, 2)?.substring(0, 500));
 
       if (!data || Object.keys(data).length === 0) {
         console.warn("[DashboardContext] ⚠️ Empty response from API");
