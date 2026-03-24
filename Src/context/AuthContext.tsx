@@ -1,5 +1,6 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AUTH_TOKEN_KEY, USER_DATA_KEY } from '../constants/storageKeys';
 
 type AuthState = {
   authtoken: string | null;
@@ -27,9 +28,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const loadAuthData = async () => {
       try {
-        const authtoken = await AsyncStorage.getItem('authtoken');
+        const authtoken = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
         const ClientID = await AsyncStorage.getItem('ClientID');
-        const userDetailsStr = await AsyncStorage.getItem('userDetails');
+        const userDetailsStr = await AsyncStorage.getItem(USER_DATA_KEY);
         const userDetails = userDetailsStr ? JSON.parse(userDetailsStr) : null;
 
         setAuthDataState({
@@ -52,16 +53,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     try {
       if (data.authtoken !== undefined) {
-        if (data.authtoken) await AsyncStorage.setItem('authtoken', data.authtoken);
-        else await AsyncStorage.removeItem('authtoken');
+        if (data.authtoken) {
+          await AsyncStorage.setItem(AUTH_TOKEN_KEY, data.authtoken);
+        } else {
+          await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
+        }
       }
       if (data.ClientID !== undefined) {
         if (data.ClientID) await AsyncStorage.setItem('ClientID', data.ClientID);
         else await AsyncStorage.removeItem('ClientID');
       }
       if (data.userDetails !== undefined) {
-        if (data.userDetails) await AsyncStorage.setItem('userDetails', JSON.stringify(data.userDetails));
-        else await AsyncStorage.removeItem('userDetails');
+        if (data.userDetails) await AsyncStorage.setItem(USER_DATA_KEY, JSON.stringify(data.userDetails));
+        else await AsyncStorage.removeItem(USER_DATA_KEY);
       }
     } catch (error) {
       console.error('Error saving auth data', error);
@@ -70,7 +74,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     try {
-      // Clear ALL stored data — auth tokens, branch cache, preferences, etc.
       await AsyncStorage.clear();
       setAuthDataState({ authtoken: null, ClientID: null, userDetails: null });
     } catch (error) {
@@ -92,3 +95,4 @@ export const useAuth = () => {
   }
   return context;
 };
+

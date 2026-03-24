@@ -12,6 +12,7 @@ import AppNavigator from "../Src/navigation/AppNavigator";
 import { ThemeProvider } from "../Src/theme";
 import { AuthProvider } from "../Src/context/AuthContext";
 import { DateFilterProvider } from "../Src/context/DateFilterContext";
+import { DashboardProvider } from "../Src/context/DashboardContext";
 
 export default function Index() {
   const [fontsLoaded] = useFonts({
@@ -35,7 +36,9 @@ export default function Index() {
     <ThemeProvider>
       <AuthProvider>
         <DateFilterProvider>
-          <AppNavigator />
+          <DashboardProvider>
+            <AppNavigator />
+          </DashboardProvider>
         </DateFilterProvider>
       </AuthProvider>
     </ThemeProvider>

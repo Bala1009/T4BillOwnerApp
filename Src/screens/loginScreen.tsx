@@ -1,4 +1,6 @@
 import { Feather } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { AUTH_TOKEN_KEY, USER_DATA_KEY } from "../constants/storageKeys";
 import { useNavigation } from "@react-navigation/native";
 import React, { useEffect, useState } from "react";
 import {
@@ -108,47 +110,36 @@ export default function LoginScreen() {
       setIsLoading(true);
 
       try {
-        console.log("Login attempt:", { userName, password });
+        // loginUser validates isSuccess and throws on failure
+        const data = await loginUser(userName, password, "device123");
 
-        const res = await loginUser(userName, password, "device123");
+        // ── Parse result string for ClientID ─────────────────────
+        const result = data?.result || "";
+        const resultArray = result?.split("~") || [];
+        const clientID = resultArray.length > 2 ? resultArray[2] : null;
 
-        console.log("Login response:", res);
+        // JWT token already stored by loginUser() in authApi
+        const jwtToken = data?.token;
 
-        // Validate response
-        const result = res?.data?.result || "";
+        // ── Store full login response for future use ─────────────
+        await AsyncStorage.setItem(USER_DATA_KEY, JSON.stringify(data));
 
-        if (!result.includes("Success")) {
-          Alert.alert("Login Failed", "Invalid username or password");
-          setPasswordError("Invalid username or password");
-          return;
-        }
-
-        // Extract ClientID from result (e.g., "Success-1234")
-        const resultParts = result.split("~");
-        const clientID = resultParts.length > 1 ? resultParts[1] : null;
-        console.log("Extracted ClientID:", clientID);
-        // Extract token
-        const token = res.headers?.authtoken || res.headers?.["authtoken"];
-
+        // ── Store auth data in context ───────────────────────────
         await setAuthData({
-          authtoken: token || null,
+          authtoken: jwtToken || null,
           ClientID: clientID,
-          userDetails: res.data
-            ? { ...res.data, loginUserName: userName }
-            : { loginUserName: userName },
+          userDetails: { ...data, loginUserName: userName },
         });
 
-        // Only success if API confirms login
+        console.log("[Login] ✅ Auth flow completed successfully");
+
         setIsSuccess(true);
-      } catch (error) {
-        console.error("Login failed:", error);
+      } catch (error: any) {
+        const errorMessage = error?.message || "Unable to login. Please check your credentials.";
+        console.error("[Login] ❌ Failed:", errorMessage);
 
-        Alert.alert(
-          "Login Failed",
-          "Unable to login. Please check your credentials.",
-        );
-
-        setPasswordError("Invalid username or password");
+        Alert.alert("Login Failed", errorMessage);
+        setPasswordError(errorMessage);
       } finally {
         setIsLoading(false);
       }

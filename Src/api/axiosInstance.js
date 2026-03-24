@@ -1,92 +1,94 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import axios from 'axios';
-import { DeviceEventEmitter } from 'react-native';
+import axios from "axios";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { AUTH_TOKEN_KEY, USERNAME_KEY, PASSWORD_KEY } from "../constants/storageKeys";
+import { DeviceEventEmitter } from "react-native";
 
-const BASE_URL = 'https://api.touch4bill.com/V1.0/';
+const BASE_URL = "https://api.touch4bill.com";
 
 const axiosInstance = axios.create({
-    baseURL: BASE_URL,
-    headers: {
-        'Content-Type': 'application/json',
-    },
-    timeout: 30000, // Increased timeout to prevent Network Error on slow queries
+  baseURL: BASE_URL,
+  timeout: 30000,
+  headers: {
+    "Content-Type": "application/json",
+  },
 });
 
-// Request interceptor
+
+// 🔐 REQUEST INTERCEPTOR
 axiosInstance.interceptors.request.use(
   async (config) => {
-    try {
-      const token = await AsyncStorage.getItem("authtoken");
+    const token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
+    console.log("[Axios] Token attached:", !!token);
 
-      if (token) {
-        config.headers.authtoken = token;
-      }
-
-    } catch (error) {
-      console.error("Error fetching token from AsyncStorage", error);
+    if (token) {
+      config.headers = config.headers || {};
+      config.headers["Authorization"] = `Bearer ${token}`;
     }
 
     return config;
   },
-  (error) => {
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
-// Response interceptor
+
+// 🔁 RESPONSE INTERCEPTOR (401 HANDLE)
 axiosInstance.interceptors.response.use(
-  (response) => {
-    // Optional: console.log(`[Axios] Response from ${response.config.url}`, response.status);
-    return response;
-  },
+  (response) => response,
   async (error) => {
-    // Enhanced error logging for network errors
-    if (error.isAxiosError) {
-      console.error(`[Axios Error] API: ${error.config?.url} | message: ${error.message} | code: ${error.code}`);
-      if (!error.response) {
-         console.error("[Axios Error] Server unreachable or request timed out (Network Error).");
-      }
-    }
+    const originalRequest = error.config;
 
-    if (error.response && error.response.status === 401) {
+    // 🔥 Prevent infinite loop
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+
       try {
+        const userName = await AsyncStorage.getItem(USERNAME_KEY);
+        const password = await AsyncStorage.getItem(PASSWORD_KEY);
 
-        const userName = await AsyncStorage.getItem("username");
-        const password = await AsyncStorage.getItem("password");
-
-        if (userName && password) {
-
-          // Re-login to get new token
-          const res = await axios.post(
-            "https://api.touch4bill.com/V1.0/Login/GetLogin",
-            {
-              userName,
-              passWord: password,
-              deviceID: "device123"
-            }
-          );
-
-          const newToken = res.headers.authtoken;
-
-          if (newToken) {
-            await AsyncStorage.setItem("authtoken", newToken);
-          }
-
-          // Retry original request
-          error.config.headers.authtoken = newToken;
-
-          return axiosInstance(error.config);
-
-        } else {
-          DeviceEventEmitter.emit("AUTH_FAILED");
+        if (!userName || !password) {
+          throw new Error("No saved credentials");
         }
 
-      } catch (_e) {
+        // 🔁 Re-login via V2.0 endpoint
+        const res = await axios.post(`${BASE_URL}/V2.0/Login/GetLogin`, {
+          userName,
+          passWord: password,
+          deviceID: "device123",
+        });
 
-        await AsyncStorage.removeItem("authtoken");
-        await AsyncStorage.removeItem("userDetails");
+        console.log("[Axios Refresh] HTTP Status:", res.status);
+        console.log("[Axios Refresh] isSuccess:", res?.data?.isSuccess);
 
+        // ✅ Validate login success
+        if (!res?.data?.isSuccess) {
+          throw new Error(res?.data?.message || "Token refresh login failed");
+        }
+
+        const newToken = res?.data?.token;
+
+        if (!newToken) {
+          throw new Error("No token received on refresh");
+        }
+
+        // ✅ Save new token
+        await AsyncStorage.setItem(AUTH_TOKEN_KEY, newToken);
+        console.log("[Axios Refresh] ✅ Token refreshed successfully");
+
+        // 🔁 Retry original request
+        originalRequest.headers = originalRequest.headers || {};
+        originalRequest.headers["Authorization"] = `Bearer ${newToken}`;
+
+        return axiosInstance(originalRequest);
+
+      } catch (refreshError) {
+        console.error("[Axios Refresh] ❌ Token refresh failed");
+
+        await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
+
+        // 🔔 Trigger logout
         DeviceEventEmitter.emit("AUTH_FAILED");
+
+        return Promise.reject(refreshError);
       }
     }
 

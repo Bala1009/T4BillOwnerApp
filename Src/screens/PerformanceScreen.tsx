@@ -9,7 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Feather } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 
-import { GradientHeader, DateRangePicker, type DateRangePickerRef, ScreenWrapper } from '../components';
+import { GradientHeader, DateRangePicker, EmptyBranchState, type DateRangePickerRef, ScreenWrapper } from '../components';
 import { useAuth } from '../context/AuthContext';
 import { useDateFilter } from '../context/DateFilterContext';
 import { getBranchMaster } from '../api/branchService';
@@ -128,6 +128,7 @@ export default function PerformanceScreen() {
   const [trendSalesData, setTrendSalesData] = useState<any>(null);
   const [trendLoading, setTrendLoading] = useState(false);
   const [showTrendDropdown, setShowTrendDropdown] = useState(false);
+  const [noBranchAvailable, setNoBranchAvailable] = useState(false);
 
   // Fade animation for content section swap
   const contentOpacity = useRef(new Animated.Value(1)).current;
@@ -138,12 +139,10 @@ export default function PerformanceScreen() {
 
   /* ── Data loading ────────────────────────────────────────── */
   const loadData = useCallback(async (forcedBranchId?: number) => {
-    if (!authData?.ClientID) return;
     try {
       setLoading(true);
       let branchIdNum = forcedBranchId || 0;
 
-      // Load saved branch once — reused for both branchId and metadata
       const savedStr = await AsyncStorage.getItem('selectedBranch');
 
       if (!branchIdNum) {
@@ -153,38 +152,41 @@ export default function PerformanceScreen() {
         }
       }
       if (!branchIdNum) {
-        const list = await getBranchMaster(Number(authData.ClientID));
+        const list = await getBranchMaster();
         if (list?.length > 0) {
           const sb = list[0];
           branchIdNum = sb?.BranchID || sb?.branchID || sb?.BranchId || sb?.branchId || sb?.id || sb?.ID || 0;
+        } else {
+          setNoBranchAvailable(true);
+          setLoading(false);
+          setRefreshing(false);
+          return;
         }
       }
 
-      // Use the global date range from the Dashboard calendar
-      const activeBranch = savedStr ? JSON.parse(savedStr) : null;
-      const payload: any = {
-        startDate, endDate,
-        branchID: branchIdNum, clientID: Number(authData.ClientID),
+      const payload = {
+        startDate: new Date(startDate).toISOString(),
+        endDate: new Date(endDate).toISOString(),
+        phase: "",
+        isActive: "",
+        vendorID: 0,
+        branchID: branchIdNum,
       };
-      const phase = activeBranch?.Phase || activeBranch?.phase || null;
-      if (phase) payload.phase = phase;
-      if (activeBranch?.IsActive || activeBranch?.isActive) payload.isActive = true;
-      const vendorId = activeBranch?.VendorID || activeBranch?.vendorID || 0;
-      if (vendorId) payload.vendorID = vendorId;
 
+      console.log("[Performance] Payload:", payload);
       const data = await getSalesDetails(payload);
       setSalesData(data);
+      console.log("[Performance] ✅ Data updated");
     } catch (e) {
       console.error('[PerformanceScreen] fetch error:', e);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [authData?.ClientID, startDate, endDate]);
+  }, [startDate, endDate]);
 
   /* ── Trend-specific data loading ─────────────────────────── */
   const loadTrendData = useCallback(async (period: string) => {
-    if (!authData?.ClientID) return;
     try {
       setTrendLoading(true);
       const now = new Date();
@@ -208,21 +210,19 @@ export default function PerformanceScreen() {
         branchIdNum = sb?.BranchID || sb?.branchID || sb?.BranchId || sb?.branchId || sb?.id || sb?.ID || 0;
       }
       if (!branchIdNum) {
-        const list = await getBranchMaster(Number(authData.ClientID));
+        const list = await getBranchMaster();
         if (list?.length > 0) {
           branchIdNum = list[0]?.BranchID || list[0]?.branchID || 0;
         }
       }
-      const activeBranch = savedStr ? JSON.parse(savedStr) : null;
-      const payload: any = {
-        startDate: tStart, endDate: tEnd,
-        branchID: branchIdNum, clientID: Number(authData.ClientID),
+      const payload = {
+        startDate: new Date(tStart).toISOString(),
+        endDate: new Date(tEnd).toISOString(),
+        phase: "",
+        isActive: "",
+        vendorID: 0,
+        branchID: branchIdNum,
       };
-      const phase = activeBranch?.Phase || activeBranch?.phase || null;
-      if (phase) payload.phase = phase;
-      if (activeBranch?.IsActive || activeBranch?.isActive) payload.isActive = true;
-      const vendorId = activeBranch?.VendorID || activeBranch?.vendorID || 0;
-      if (vendorId) payload.vendorID = vendorId;
       const data = await getSalesDetails(payload);
       setTrendSalesData(data);
     } catch (e) {
@@ -230,19 +230,27 @@ export default function PerformanceScreen() {
     } finally {
       setTrendLoading(false);
     }
-  }, [authData?.ClientID]);
+  }, []);
 
   useEffect(() => {
     loadData();
     loadTrendData('Today');
-    const sub = DeviceEventEmitter.addListener('BRANCH_CHANGED', (branch) => {
+    const branchSub = DeviceEventEmitter.addListener('BRANCH_CHANGED', (branch) => {
       const id = branch?.BranchID || branch?.branchID || branch?.BranchId || branch?.branchId || branch?.id || 0;
       if (id) {
         loadData(id);
         loadTrendData(trendPeriod);
       }
     });
-    return () => sub.remove();
+    // Listen for global dashboard data updates
+    const dashSub = DeviceEventEmitter.addListener('DASHBOARD_UPDATED', (data) => {
+      console.log("[Performance] Global data received via DASHBOARD_UPDATED");
+      setSalesData(data);
+    });
+    return () => {
+      branchSub.remove();
+      dashSub.remove();
+    };
   }, [loadData, loadTrendData]);
 
   /* ── Chip press with fade animation ─────────────────────── */
@@ -806,7 +814,16 @@ export default function PerformanceScreen() {
         activeFilter={activeFilter}
         onDateRangeChange={setDateFilter}
       />
-      {loading && !refreshing ? (
+      {noBranchAvailable ? (
+        <EmptyBranchState
+          title="No Branches Available"
+          message="Performance data requires a branch to be configured. Please ensure branches are set up for your account."
+          onRetry={() => {
+            setNoBranchAvailable(false);
+            loadData();
+          }}
+        />
+      ) : loading && !refreshing ? (
         <View style={s.loadingBox}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[s.loadingText, { color: colors.textSecondary }]}>Loading performance data…</Text>

@@ -23,6 +23,7 @@ import { getBranchMaster } from "../api/branchService";
 import { getSalesDetails } from "../api/dashboardService";
 import { 
   Card, 
+  EmptyBranchState,
   GradientHeader, 
   ScreenWrapper, 
   SectionHeader,
@@ -68,6 +69,7 @@ export default function InventoryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [noBranchAvailable, setNoBranchAvailable] = useState(false);
 
   const calendarRef = React.useRef<DateRangePickerRef>(null);
 
@@ -81,8 +83,6 @@ export default function InventoryScreen() {
 
   const loadData = useCallback(
     async (forcedBranchId?: number) => {
-      if (!authData?.ClientID) return;
-
       try {
         setLoading(true);
         setErrorMsg(null);
@@ -104,10 +104,7 @@ export default function InventoryScreen() {
         }
 
         if (!branchIdNum) {
-          // Fetch fallback
-          const clientIdNum = Number(authData.ClientID);
-          const branchList = await getBranchMaster(clientIdNum);
-
+          const branchList = await getBranchMaster();
           if (branchList && branchList.length > 0) {
             const selectedBranch = branchList[0];
             branchIdNum =
@@ -118,58 +115,24 @@ export default function InventoryScreen() {
               selectedBranch?.id ||
               selectedBranch?.ID ||
               0;
-          }
-        }
-
-        // Use the global date filter from context
-
-        let activeBranchObj: any = null;
-        if (forcedBranchId) {
-          const savedStr = await AsyncStorage.getItem("selectedBranch");
-          if (savedStr) {
-            activeBranchObj = JSON.parse(savedStr);
-          }
-        } else {
-          const savedStr = await AsyncStorage.getItem("selectedBranch");
-          if (savedStr) {
-            activeBranchObj = JSON.parse(savedStr);
           } else {
-            const clientIdNum = Number(authData.ClientID);
-            const branchList = await getBranchMaster(clientIdNum);
-            if (branchList && branchList.length > 0)
-              activeBranchObj = branchList[0];
+            setNoBranchAvailable(true);
+            setLoading(false);
+            setRefreshing(false);
+            return;
           }
         }
 
-        const vendorIdNum =
-          activeBranchObj?.VendorID ||
-          activeBranchObj?.vendorID ||
-          activeBranchObj?.VendorId ||
-          activeBranchObj?.vendorId ||
-          0;
-
-        const isActive =
-          activeBranchObj?.IsActive || activeBranchObj?.isActive ? true : false;
-
-        const phaseValue =
-          activeBranchObj?.Phase || activeBranchObj?.phase || null;
-
-        const payload: any = {
-          startDate,
-          endDate,
+        const payload = {
+          startDate: new Date(startDate).toISOString(),
+          endDate: new Date(endDate).toISOString(),
+          phase: "",
+          isActive: "",
+          vendorID: 0,
           branchID: branchIdNum,
-          clientID: Number(authData.ClientID),
         };
 
-        if (phaseValue !== null && phaseValue !== "")
-          payload.phase = phaseValue;
-        if (isActive) payload.isActive = isActive;
-        if (vendorIdNum) payload.vendorID = vendorIdNum;
-
-        console.log(
-          "[InventoryScreen] Request Payload:",
-          JSON.stringify(payload, null, 2),
-        );
+        console.log("[Inventory] Payload:", payload);
 
         const dbData = await getSalesDetails(payload);
         const itemWise = dbData?.dashBoardItemWiseSalesList || [];
@@ -184,11 +147,11 @@ export default function InventoryScreen() {
           }),
         );
 
-        // Sort by sales quantity initially
         rawProducts.sort((a, b) => b.salesCount - a.salesCount);
 
         setProducts(rawProducts);
         setFilteredProducts(rawProducts);
+        console.log("[Inventory] \u2705 Data updated, items:", rawProducts.length);
       } catch (error) {
         console.error("Failed to fetch inventory data from Sales API:", error);
         setErrorMsg(
@@ -201,13 +164,13 @@ export default function InventoryScreen() {
         setRefreshing(false);
       }
     },
-    [authData?.ClientID, startDate, endDate],
+    [startDate, endDate],
   );
 
   useEffect(() => {
     loadData();
 
-    const subscription = DeviceEventEmitter.addListener(
+    const branchSub = DeviceEventEmitter.addListener(
       "BRANCH_CHANGED",
       (branch) => {
         const branchIdNum =
@@ -224,7 +187,28 @@ export default function InventoryScreen() {
       },
     );
 
-    return () => subscription.remove();
+    // Listen for global dashboard data updates
+    const dashSub = DeviceEventEmitter.addListener('DASHBOARD_UPDATED', (data) => {
+      console.log("[Inventory] Global data received via DASHBOARD_UPDATED");
+      const itemWise = data?.dashBoardItemWiseSalesList || [];
+      const rawProducts: InventorySalesItem[] = itemWise.map(
+        (it: any, index: number) => ({
+          id: `prod_${index}`,
+          name: it.productDescription || "Unknown",
+          salesCount: it.count || 0,
+          revenue: it.totalPrice || 0,
+          categoryName: it.menuCategoryName || it.categoryName || getCategoryFromName(it.productDescription || "Unknown"),
+        }),
+      );
+      rawProducts.sort((a, b) => b.salesCount - a.salesCount);
+      setProducts(rawProducts);
+      setFilteredProducts(rawProducts);
+    });
+
+    return () => {
+      branchSub.remove();
+      dashSub.remove();
+    };
   }, [loadData]);
 
   const onRefresh = () => {
@@ -661,6 +645,32 @@ export default function InventoryScreen() {
       </TouchableOpacity>
     );
   };
+
+  if (noBranchAvailable) {
+    return (
+      <ScreenWrapper edges={['bottom', 'left', 'right']}>
+        <GradientHeader 
+          title="Inventory" 
+          onCalendarPress={() => calendarRef.current?.openModal()} 
+        />
+        <DateRangePicker
+          ref={calendarRef}
+          hideChip={true}
+          dateRange={dateRange}
+          activeFilter={activeFilter}
+          onDateRangeChange={setDateFilter}
+        />
+        <EmptyBranchState
+          title="No Branches Available"
+          message="Inventory data requires a branch to be configured. Please ensure branches are set up for your account."
+          onRetry={() => {
+            setNoBranchAvailable(false);
+            loadData();
+          }}
+        />
+      </ScreenWrapper>
+    );
+  }
 
   if (loading && !refreshing) {
     return (

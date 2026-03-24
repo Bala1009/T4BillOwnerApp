@@ -1,28 +1,49 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { AUTH_TOKEN_KEY } from "../constants/storageKeys";
 import axiosInstance from "./axiosInstance";
 
-export const getBranchMaster = async (clientID?: number) => {
+/**
+ * Fetches the branch master list from the API.
+ *
+ * - Endpoint: /Master/GetBranchMaster (NO query parameters)
+ * - Authorization: Bearer token attached automatically via axios interceptor
+ *
+ * @returns An array of branch objects, or an empty array if none found.
+ */
+export const getBranchMaster = async () => {
   try {
-    console.log("[getBranchMaster] Request started...");
+    // Check token from AsyncStorage
+    const token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
+    console.log("[Branch] Token from storage:", token);
+    console.log("[Branch] Token present:", !!token);
 
-    const url = clientID
-      ? `Master/GetBranchMaster?ClientID=${clientID}`
-      : "Master/GetBranchMaster";
+    if (!token) {
+      console.warn("[Branch] ⚠️ No token found — skipping API call");
+      return [];
+    }
 
-    console.log("[getBranchMaster] Request URL:", url);
+    // Make API request
+    console.log("[Branch] Calling API...");
+    console.log("[Branch] Request → GET /Master/GetBranchMaster");
 
-    const response = await axiosInstance.get(url);
+    const response = await axiosInstance.get("/Master/GetBranchMaster");
 
-    console.log(
-      "[getBranchMaster] Response received:",
-      JSON.stringify(response.data, null, 2)
-    );
+    // Log response
+    console.log("[Branch] HTTP Status:", response.status);
+    console.log("[Branch] Raw Response:", response.data);
 
+    // Extract branch list
     const branchList = response?.data?.branchMasterList || [];
+    console.log("[Branch] Extracted Branches:", branchList);
+    console.log("[Branch] Branch count:", branchList.length);
+
+    if (branchList.length === 0) {
+      console.warn("[Branch] ⚠️ No branches returned from API");
+    }
 
     return branchList;
-
-  } catch (error) {
-    console.error("[getBranchMaster] API Error:", error);
+  } catch (error: any) {
+    console.error("[Branch] API Error:", error);
     throw error;
   }
 };

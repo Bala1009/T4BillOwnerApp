@@ -36,8 +36,10 @@ import Svg, {
 import { getBranchMaster } from "../api/branchService";
 import { getSalesDetails } from "../api/dashboardService";
 import {
+  BranchDropdown,
   Card,
   DateRangePicker,
+  EmptyBranchState,
   GradientHeader,
   ScreenWrapper,
   SectionHeader,
@@ -45,10 +47,9 @@ import {
 } from "../components";
 import { useAuth } from "../context/AuthContext";
 import { useDateFilter } from "../context/DateFilterContext";
+import { useDashboard } from "../context/DashboardContext";
 import type { ThemeColors } from "../theme";
 import { hp, ms, useTheme, wp } from "../theme";
-
-
 
 function buildAreaPath(
   data: number[],
@@ -95,76 +96,53 @@ export default function DashboardScreen() {
   const { dateRange, activeFilter, startDate, endDate, setDateFilter } =
     useDateFilter();
 
+  // ── Global dashboard context ──────────────────────────────
+  const globalCtx = useDashboard();
+
   const [selectedBranch, setSelectedBranch] = useState<any | null>(null);
-  const [dashboardData, setDashboardData] = useState<any | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [localErrorMsg, setLocalErrorMsg] = useState<string | null>(null);
+
+  // Derive from context
+  const dashboardData = globalCtx.dashboardData;
+  const isLoading = globalCtx.isLoading;
+  const errorMsg = localErrorMsg || globalCtx.errorMsg;
+
+  // ── Branch availability tracking ──────────────────────────
+  const [branchLoading, setBranchLoading] = useState(true);
+  const [hasBranches, setHasBranches] = useState(false);
 
   const calendarRef = useRef<DateRangePickerRef>(null);
 
   const fetchDashboardData = useCallback(async () => {
-    if (!authData?.ClientID || !selectedBranch) return;
+    if (!selectedBranch) {
+      console.log("[Dashboard] ⚠️ No branch selected — skipping API call");
+      return;
+    }
 
-    const branchIdNum =
-      selectedBranch?.BranchID ||
-      selectedBranch?.branchID ||
-      selectedBranch?.BranchId ||
-      selectedBranch?.branchId ||
-      selectedBranch?.id ||
-      selectedBranch?.ID ||
-      0;
-
-    const vendorIdNum =
-      selectedBranch?.VendorID ||
-      selectedBranch?.vendorID ||
-      selectedBranch?.VendorId ||
-      selectedBranch?.vendorId ||
-      0;
-
-    const isActive =
-      selectedBranch?.IsActive || selectedBranch?.isActive ? true : false;
-
-    const phaseValue = selectedBranch?.Phase || selectedBranch?.phase || null;
-
-    const payload: any = {
-      startDate,
-      endDate,
-      branchID: branchIdNum,
-      clientID: Number(authData?.ClientID),
-    };
-
-    if (phaseValue !== null && phaseValue !== "") payload.phase = phaseValue;
-    if (isActive) payload.isActive = isActive;
-    if (vendorIdNum) payload.vendorID = vendorIdNum;
-
-    console.log(
-      "[DashboardScreen] Request Payload:",
-      JSON.stringify(payload, null, 2),
-    );
+    console.log("[Dashboard] Fetching via global context...");
+    setLocalErrorMsg(null);
 
     try {
-      if (!isRefreshing) setIsLoading(true);
-      setErrorMsg(null);
-      const dbData = await getSalesDetails(payload);
-      console.log(
-        "[DashboardScreen] Dashboard Data received:",
-        JSON.stringify(dbData, null, 2),
-      );
-      setDashboardData(dbData);
+      await globalCtx.fetchDashboardData(selectedBranch, startDate, endDate);
+      console.log("[Dashboard] ✅ Global data updated");
     } catch (error: any) {
-      console.error("[DashboardScreen] Fetch Data Error:", error);
-      setErrorMsg(
+      console.error("[Dashboard] ❌ Fetch Error:", error);
+      setLocalErrorMsg(
         "Failed to load dashboard data. Please check your network connection and try again.",
       );
     } finally {
-      setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [startDate, endDate, selectedBranch, authData?.ClientID]);
+  }, [startDate, endDate, selectedBranch, globalCtx.fetchDashboardData]);
 
+  // ── Fetch dashboard data when branch is selected ───────────
   useEffect(() => {
-    fetchDashboardData();
+    if (selectedBranch) {
+      // Also update context's selected branch
+      globalCtx.setSelectedBranch(selectedBranch);
+      fetchDashboardData();
+    }
   }, [fetchDashboardData]);
 
   // Removed — DateRangePicker now calls setDateFilter from context directly
@@ -228,7 +206,13 @@ export default function DashboardScreen() {
         }
       >
         <View style={{ paddingHorizontal: wp(0), paddingTop: hp(8) }}>
-          <BranchSelector onBranchSelected={setSelectedBranch} />
+          <BranchSelectorWithConditionalRendering
+            onBranchSelected={setSelectedBranch}
+            onBranchesLoaded={(count) => {
+              setHasBranches(count > 0);
+              setBranchLoading(false);
+            }}
+          />
           <DateRangePicker
             ref={calendarRef}
             hideChip={true}
@@ -237,7 +221,13 @@ export default function DashboardScreen() {
             onDateRangeChange={setDateFilter}
           />
         </View>
-        {isLoading ? (
+        {/* Show empty branch state when no branches are available */}
+        {!branchLoading && !hasBranches ? (
+          <EmptyBranchState
+            title="No Branches Available"
+            message="No branches are configured for your account. Dashboard data requires at least one branch. Please contact your administrator."
+          />
+        ) : isLoading ? (
           <View style={{ padding: hp(40), alignItems: "center" }}>
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={{ marginTop: hp(12), color: colors.textSecondary }}>
@@ -294,7 +284,7 @@ export default function DashboardScreen() {
             <RevenueLeakage data={dashboardData.dashBoardCount} />
             <TaxSummarySection data={dashboardData.dashBoardTaxList} />
             <ExpensesSection data={dashboardData.expensessDashBoardList} />
-            <TopSellingSection data={topBySalesRaw} />
+
             <ItemRankingSection
               title="Top Items by Sales"
               icon="trending-up"
@@ -335,53 +325,71 @@ export default function DashboardScreen() {
   );
 }
 
-// ─── Branch Selector ────────────────────────────────────────
-function BranchSelector({
+// ─── Branch Selector with Conditional Rendering ─────────────
+// Fetches branches from API, manages loading state, and conditionally
+// renders the BranchDropdown component.
+//
+// Rendering logic:
+//   loading === true  → <ActivityIndicator />
+//   branches.length > 0 → <BranchDropdown />
+//   branches.length === 0 → null (nothing rendered)
+function BranchSelectorWithConditionalRendering({
   onBranchSelected,
+  onBranchesLoaded,
 }: {
   onBranchSelected?: (branch: any) => void;
+  onBranchesLoaded?: (count: number) => void;
 }) {
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const { authData } = useAuth();
-  const navigation = useNavigation<any>();
+
   const [branches, setBranches] = useState<any[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<any | null>(null);
-  const [isDropdownVisible, setDropdownVisible] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // ── Fetch branches ONLY after token is available ───────────
   useEffect(() => {
-    fetchBranches();
-  }, [authData.ClientID]);
+    if (authData?.authtoken) {
+      console.log("[Dashboard] ✅ Token available — fetching branches...");
+      fetchBranches();
+    } else {
+      console.log("[Dashboard] ⚠️ No token yet — waiting before fetching branches");
+    }
+  }, [authData?.authtoken]);
 
   const fetchBranches = async () => {
     try {
       setLoading(true);
+      console.log("[Dashboard] Fetching branches...");
 
-      console.log(
-        "[Dashboard] Fetching branches for ClientID:",
-        authData.ClientID,
-      );
+      const branchList = await getBranchMaster();
 
-      const clientIdNumber = authData.ClientID
-        ? Number(authData.ClientID)
-        : undefined;
-      const branchList = await getBranchMaster(clientIdNumber);
-
-      console.log(
-        "[Dashboard] Branches received:",
-        JSON.stringify(branchList, null, 2),
-      );
+      console.log("[Dashboard] Branches received:", branchList);
+      console.log("[Dashboard] Branch count:", branchList.length);
 
       setBranches(branchList);
+      console.log("[Dashboard] State updated:", branchList.length, "branches");
 
+      // Notify parent about branch availability
+      if (onBranchesLoaded) onBranchesLoaded(branchList.length);
+
+      // Auto-select first branch as default
       if (branchList.length > 0) {
-        setSelectedBranch(branchList[0]);
-        if (onBranchSelected) onBranchSelected(branchList[0]);
+        const defaultBranch = branchList[0];
+        console.log("[Dashboard] Selected Branch:", defaultBranch);
+        setSelectedBranch(defaultBranch);
+
+        if (onBranchSelected) {
+          onBranchSelected(defaultBranch);
+        }
+
         await AsyncStorage.setItem(
           "selectedBranch",
-          JSON.stringify(branchList[0]),
+          JSON.stringify(defaultBranch),
         );
-        DeviceEventEmitter.emit("BRANCH_CHANGED", branchList[0]);
+        DeviceEventEmitter.emit("BRANCH_CHANGED", defaultBranch);
+      } else {
+        console.warn("[Dashboard] ⚠️ No branches available from API");
       }
     } catch (error) {
       console.error("[Dashboard] Error fetching branches:", error);
@@ -390,191 +398,29 @@ function BranchSelector({
     }
   };
 
+  // ── Handle branch selection from dropdown ──────────────────
   const handleBranchSelect = async (branch: any) => {
     console.log("[Dashboard] Selected branch:", branch);
     setSelectedBranch(branch);
     if (onBranchSelected) onBranchSelected(branch);
     await AsyncStorage.setItem("selectedBranch", JSON.stringify(branch));
     DeviceEventEmitter.emit("BRANCH_CHANGED", branch);
-    setDropdownVisible(false);
   };
 
-  // Branch Name mapping fallback if API returns a slightly unpredictable key
-  const getBranchName = (b: any) =>
-    b?.branchName || b?.BranchName || b?.name || "Unknown Branch";
-
+  // ── Conditional rendering ──────────────────────────────────
   return (
     <View>
-      <TouchableOpacity
-        style={[s.branchSelector, { backgroundColor: colors.card }]}
-        onPress={() => setDropdownVisible(true)}
-      >
-        {loading ? (
-          <ActivityIndicator size="small" color={colors.textPrimary} />
-        ) : (
-          <>
-            <Feather
-              name="map-pin"
-              size={ms(16)}
-              color={colors.primary}
-              style={{ marginRight: wp(8) }}
-            />
-            <Text
-              style={[s.branchText, { color: colors.textPrimary }]}
-              numberOfLines={1}
-            >
-              {selectedBranch ? getBranchName(selectedBranch) : "Select Branch"}
-            </Text>
-            <Feather
-              name="chevron-down"
-              size={ms(16)}
-              color={colors.textSecondary}
-            />
-          </>
-        )}
-      </TouchableOpacity>
-
-      {/* Branch Dropdown Modal */}
-      <Modal
-        visible={isDropdownVisible}
-        transparent={true}
-        animationType="slide"
-        onRequestClose={() => setDropdownVisible(false)}
-      >
-        <TouchableWithoutFeedback onPress={() => setDropdownVisible(false)}>
-          <View
-            style={[s.modalOverlay, { justifyContent: "flex-end", padding: 0 }]}
-          >
-            <TouchableWithoutFeedback>
-              <View
-                style={[
-                  s.dropdownContent,
-                  {
-                    backgroundColor: colors.card,
-                    borderBottomLeftRadius: 0,
-                    borderBottomRightRadius: 0,
-                    paddingBottom: hp(32),
-                  },
-                ]}
-              >
-                <View style={s.dropdownHeader}>
-                  <Text
-                    style={[s.dropdownTitle, { color: colors.textPrimary }]}
-                  >
-                    Select Branch
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => setDropdownVisible(false)}
-                    style={s.dropdownCloseBtn}
-                  >
-                    <Feather
-                      name="x"
-                      size={ms(20)}
-                      color={colors.textSecondary}
-                    />
-                  </TouchableOpacity>
-                </View>
-
-                {branches.length === 0 ? (
-                  <Text
-                    style={[
-                      s.noDataText,
-                      {
-                        color: colors.textSecondary,
-                        textAlign: "center",
-                        padding: ms(16),
-                      },
-                    ]}
-                  >
-                    No data available for this branch
-                  </Text>
-                ) : (
-                  <ScrollView
-                    style={{ maxHeight: hp(300) }}
-                    showsVerticalScrollIndicator={false}
-                  >
-                    {branches.map((b, i) => {
-                      const isSelected =
-                        (selectedBranch?.BranchID &&
-                          b?.BranchID &&
-                          selectedBranch.BranchID === b.BranchID) ||
-                        (selectedBranch?.branchID &&
-                          b?.branchID &&
-                          selectedBranch.branchID === b.branchID) ||
-                        (selectedBranch?.BranchId &&
-                          b?.BranchId &&
-                          selectedBranch.BranchId === b.BranchId) ||
-                        (selectedBranch?.branchId &&
-                          b?.branchId &&
-                          selectedBranch.branchId === b.branchId) ||
-                        (selectedBranch?.id &&
-                          b?.id &&
-                          selectedBranch.id === b.id) ||
-                        selectedBranch === b;
-
-                      const bName = getBranchName(b);
-
-                      return (
-                        <TouchableOpacity
-                          key={i}
-                          style={[
-                            s.branchOptionRow,
-                            isSelected && {
-                              backgroundColor: isDark
-                                ? colors.border
-                                : "#F8FAFC",
-                            },
-                          ]}
-                          onPress={() => handleBranchSelect(b)}
-                        >
-                          <View
-                            style={{
-                              flexDirection: "row",
-                              alignItems: "center",
-                              flex: 1,
-                            }}
-                          >
-                            <Feather
-                              name="map-pin"
-                              size={ms(16)}
-                              color={
-                                isSelected
-                                  ? colors.primary
-                                  : colors.textSecondary
-                              }
-                              style={{ marginRight: wp(12) }}
-                            />
-                            <Text
-                              style={[
-                                s.branchOptionText,
-                                {
-                                  color: isSelected
-                                    ? colors.primary
-                                    : colors.textPrimary,
-                                  fontWeight: isSelected ? "bold" : "600",
-                                },
-                              ]}
-                            >
-                              {bName}
-                            </Text>
-                          </View>
-                          {isSelected && (
-                            <Feather
-                              name="check-circle"
-                              size={ms(18)}
-                              color={colors.primary}
-                            />
-                          )}
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
-                )}
-              </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
+      {loading ? (
+        <View style={[s.branchSelector, { backgroundColor: colors.card }]}>
+          <ActivityIndicator size="small" color={colors.primary} />
+        </View>
+      ) : branches.length > 0 ? (
+        <BranchDropdown
+          branches={branches}
+          selectedBranch={selectedBranch}
+          onSelect={handleBranchSelect}
+        />
+      ) : null}
     </View>
   );
 }
@@ -2364,121 +2210,7 @@ function ExpensesSection({ data }: { data: any[] }) {
   );
 }
 
-// ─── Top Selling Items (Premium) ────────────────────────────
-const MEDAL_COLORS = ["#F59E0B", "#94A3B8", "#D97706"] as const;
-const MEDAL_BG = ["#FEF3C7", "#F1F5F9", "#FEF3C7"] as const;
 
-function TopSellingSection({ data }: { data: any[] }) {
-  const { colors } = useTheme();
-
-  if (!data || data.length === 0) return null;
-
-  const totalSales = data.reduce((sum, d) => sum + (d.totalPrice || 0), 0);
-  const topItems = data.slice(0, 5).map((d) => ({
-    name: d.productDescription || "Unknown",
-    qty: d.count || 0,
-    revenue: `₹${(d.totalPrice || 0).toLocaleString()}`,
-    pct: totalSales > 0 ? (d.totalPrice || 0) / totalSales : 0,
-  }));
-  const bestSeller = topItems[0];
-
-  return (
-    <Card>
-      <SectionHeader title="Top Selling Items" />
-
-      {/* Best Seller Hero */}
-      <View style={[s.tsHero, { backgroundColor: colors.primary + "0C" }]}>
-        <View style={s.tsHeroLeft}>
-          <View style={[s.tsHeroBadge, { backgroundColor: MEDAL_BG[0] }]}>
-            <Feather name="award" size={ms(18)} color={MEDAL_COLORS[0]} />
-          </View>
-          <View style={s.tsHeroText}>
-            <Text style={[s.tsHeroLabel, { color: colors.textTertiary }]}>
-              Best Seller
-            </Text>
-            <Text style={[s.tsHeroName, { color: colors.textPrimary }]}>
-              {bestSeller.name}
-            </Text>
-          </View>
-        </View>
-        <View style={s.tsHeroRight}>
-          <Text style={[s.tsHeroRevenue, { color: colors.primary }]}>
-            {bestSeller.revenue}
-          </Text>
-          <Text style={[s.tsHeroQty, { color: colors.textTertiary }]}>
-            {bestSeller.qty} sold
-          </Text>
-        </View>
-      </View>
-
-      {/* Item List */}
-      <View style={s.tsListWrap}>
-        {topItems.map((item, i) => {
-          const isTop3 = i < 3;
-          const medalColor = isTop3 ? MEDAL_COLORS[i] : colors.textTertiary;
-          const medalBg = isTop3 ? MEDAL_BG[i] : colors.cardAlt;
-
-          return (
-            <View
-              key={i}
-              style={[
-                s.tsItemRow,
-                i < topItems.length - 1 && {
-                  borderBottomWidth: StyleSheet.hairlineWidth,
-                  borderBottomColor: colors.border,
-                },
-              ]}
-            >
-              {/* Rank badge */}
-              <View style={[s.tsRankBadge, { backgroundColor: medalBg }]}>
-                <Text style={[s.tsRankText, { color: medalColor }]}>
-                  #{i + 1}
-                </Text>
-              </View>
-
-              {/* Info */}
-              <View style={s.tsItemInfo}>
-                <View style={s.tsItemTopRow}>
-                  <Text
-                    style={[s.tsItemName, { color: colors.textPrimary }]}
-                    numberOfLines={1}
-                  >
-                    {item.name}
-                  </Text>
-                  <Text
-                    style={[s.tsItemRevenue, { color: colors.textPrimary }]}
-                  >
-                    {item.revenue}
-                  </Text>
-                </View>
-
-                {/* Progress bar + qty */}
-                <View style={s.tsBarRow}>
-                  <View style={[s.tsBarBg, { backgroundColor: colors.border }]}>
-                    <View
-                      style={[
-                        s.tsBarFill,
-                        {
-                          width: `${item.pct * 100}%`,
-                          backgroundColor: isTop3
-                            ? colors.primary
-                            : colors.primary + "60",
-                        },
-                      ]}
-                    />
-                  </View>
-                  <Text style={[s.tsQtyLabel, { color: colors.textTertiary }]}>
-                    {item.qty}
-                  </Text>
-                </View>
-              </View>
-            </View>
-          );
-        })}
-      </View>
-    </Card>
-  );
-}
 
 // ─── Item Ranking Section (Accordion) ──────────────────────
 type RankItem = {
@@ -3194,116 +2926,7 @@ const s = StyleSheet.create({
     marginLeft: wp(18),
   },
 
-  // Top Selling
-  tsHero: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: hp(16),
-    padding: wp(14),
-    borderRadius: wp(16),
-  },
-  tsHeroLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-  tsHeroBadge: {
-    width: wp(40),
-    height: wp(40),
-    borderRadius: wp(12),
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  tsHeroText: {
-    marginLeft: wp(12),
-    flex: 1,
-  },
-  tsHeroLabel: {
-    fontSize: ms(10),
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-  },
-  tsHeroName: {
-    fontSize: ms(15),
-    fontWeight: "800",
-    marginTop: hp(2),
-  },
-  tsHeroRight: {
-    alignItems: "flex-end",
-    marginLeft: wp(8),
-  },
-  tsHeroRevenue: {
-    fontSize: ms(18),
-    fontWeight: "800",
-    letterSpacing: -0.3,
-  },
-  tsHeroQty: {
-    fontSize: ms(11),
-    fontWeight: "500",
-    marginTop: hp(2),
-  },
-  tsListWrap: {
-    marginTop: hp(12),
-  },
-  tsItemRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: hp(12),
-  },
-  tsRankBadge: {
-    width: wp(32),
-    height: wp(32),
-    borderRadius: wp(10),
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  tsRankText: {
-    fontSize: ms(12),
-    fontWeight: "800",
-  },
-  tsItemInfo: {
-    flex: 1,
-    marginLeft: wp(12),
-  },
-  tsItemTopRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  tsItemName: {
-    fontSize: ms(13),
-    fontWeight: "600",
-    flex: 1,
-    marginRight: wp(8),
-  },
-  tsItemRevenue: {
-    fontSize: ms(13),
-    fontWeight: "700",
-  },
-  tsBarRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: hp(6),
-    gap: wp(8),
-  },
-  tsBarBg: {
-    flex: 1,
-    height: hp(6),
-    borderRadius: wp(3),
-    overflow: "hidden",
-  },
-  tsBarFill: {
-    height: hp(6),
-    borderRadius: wp(3),
-  },
-  tsQtyLabel: {
-    fontSize: ms(11),
-    fontWeight: "600",
-    minWidth: wp(28),
-    textAlign: "right",
-  },
+
   // Item Ranking (Reusable)
   irHeaderRow: {
     flexDirection: "row",

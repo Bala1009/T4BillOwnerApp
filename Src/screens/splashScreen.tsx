@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { AUTH_TOKEN_KEY } from "../constants/storageKeys";
 import { useNavigation } from "@react-navigation/native";
 import React, { useEffect } from "react";
 import {
@@ -52,7 +53,7 @@ export default function SplashScreen() {
 
         const checkLoginStatus = async () => {
             try {
-                const token = await AsyncStorage.getItem('authtoken');
+                const token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
                 navigation.reset({
                     index: 0,
                     routes: [{ name: token ? "Main" : "Login" }],

@@ -21,6 +21,7 @@ import { getBranchMaster } from "../api/branchService";
 import { getSalesDetails } from "../api/dashboardService";
 import { 
   Card, 
+  EmptyBranchState,
   GradientHeader, 
   ScreenWrapper, 
   SectionHeader,
@@ -52,6 +53,7 @@ export default function PurchaseOrdersScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [dashboardData, setDashboardData] = useState<any>(null);
+  const [noBranchAvailable, setNoBranchAvailable] = useState(false);
 
   // Filter States — local chip further narrows within global date
   const [isFilterVisible, setFilterVisible] = useState(false);
@@ -60,8 +62,6 @@ export default function PurchaseOrdersScreen() {
 
   const loadData = useCallback(
     async (forcedBranchId?: number, overrideDateFilter?: string) => {
-      if (!authData?.ClientID) return;
-
       try {
         setLoading(true);
         setErrorMsg(null);
@@ -83,8 +83,7 @@ export default function PurchaseOrdersScreen() {
         }
 
         if (!branchIdNum) {
-          const clientIdNum = Number(authData.ClientID);
-          const branchList = await getBranchMaster(clientIdNum);
+          const branchList = await getBranchMaster();
           if (branchList && branchList.length > 0) {
             const selectedBranch = branchList[0];
             branchIdNum =
@@ -95,6 +94,11 @@ export default function PurchaseOrdersScreen() {
               selectedBranch?.id ||
               selectedBranch?.ID ||
               0;
+          } else {
+            setNoBranchAvailable(true);
+            setLoading(false);
+            setRefreshing(false);
+            return;
           }
         }
 
@@ -104,7 +108,6 @@ export default function PurchaseOrdersScreen() {
         const activeDateFilter = overrideDateFilter || dateFilter;
 
         if (activeDateFilter === 'Global' || activeDateFilter === 'This Month') {
-          // Follow dashboard calendar exactly
           startDate = globalStartDate;
           endDate = globalEndDate;
         } else {
@@ -115,53 +118,26 @@ export default function PurchaseOrdersScreen() {
             startDate = fmt(new Date());
             endDate = fmt(new Date());
           } else {
-            // This Week
             const s = new Date(); s.setDate(now.getDate() - 7);
             startDate = fmt(s);
             endDate = fmt(new Date());
           }
         }
 
-        let activeBranchObj: any = null;
-        if (forcedBranchId) {
-          const savedStr = await AsyncStorage.getItem("selectedBranch");
-          if (savedStr) activeBranchObj = JSON.parse(savedStr);
-        } else {
-          const savedStr = await AsyncStorage.getItem("selectedBranch");
-          if (savedStr) {
-            activeBranchObj = JSON.parse(savedStr);
-          } else {
-            const clientIdNum = Number(authData.ClientID);
-            const branchList = await getBranchMaster(clientIdNum);
-            if (branchList && branchList.length > 0)
-              activeBranchObj = branchList[0];
-          }
-        }
-
-        const vendorIdNum =
-          activeBranchObj?.VendorID ||
-          activeBranchObj?.vendorID ||
-          activeBranchObj?.VendorId ||
-          activeBranchObj?.vendorId ||
-          0;
-        const isActive =
-          activeBranchObj?.IsActive || activeBranchObj?.isActive ? true : false;
-        const phaseValue =
-          activeBranchObj?.Phase || activeBranchObj?.phase || null;
-
-        const payload: any = {
-          startDate,
-          endDate,
+        const payload = {
+          startDate: new Date(startDate).toISOString(),
+          endDate: new Date(endDate).toISOString(),
+          phase: "",
+          isActive: "",
+          vendorID: 0,
           branchID: branchIdNum,
-          clientID: Number(authData.ClientID),
         };
 
-        if (phaseValue !== null && phaseValue !== "") payload.phase = phaseValue;
-        if (isActive) payload.isActive = isActive;
-        if (vendorIdNum) payload.vendorID = vendorIdNum;
+        console.log("[Orders] Payload:", payload);
 
         const dbData = await getSalesDetails(payload);
         setDashboardData(dbData);
+        console.log("[Orders] \u2705 Data updated");
       } catch (error) {
         console.error("Failed to fetch data from Sales API:", error);
         setErrorMsg(
@@ -173,13 +149,13 @@ export default function PurchaseOrdersScreen() {
         setRefreshing(false);
       }
     },
-    [authData?.ClientID, dateFilter, globalStartDate, globalEndDate]
+    [dateFilter, globalStartDate, globalEndDate]
   );
 
   useEffect(() => {
     loadData();
 
-    const subscription = DeviceEventEmitter.addListener(
+    const branchSub = DeviceEventEmitter.addListener(
       "BRANCH_CHANGED",
       (branch) => {
         const branchIdNum =
@@ -196,7 +172,16 @@ export default function PurchaseOrdersScreen() {
       }
     );
 
-    return () => subscription.remove();
+    // Listen for global dashboard data updates
+    const dashSub = DeviceEventEmitter.addListener('DASHBOARD_UPDATED', (data) => {
+      console.log("[Orders] Global data received via DASHBOARD_UPDATED");
+      setDashboardData(data);
+    });
+
+    return () => {
+      branchSub.remove();
+      dashSub.remove();
+    };
   }, [loadData]);
 
   const onRefresh = () => {
@@ -611,7 +596,16 @@ export default function PurchaseOrdersScreen() {
       {renderHeader()}
       {renderFilterModal()}
       
-      {loading ? (
+      {noBranchAvailable ? (
+        <EmptyBranchState
+          title="No Branches Available"
+          message="Order data requires a branch to be configured. Please ensure branches are set up for your account."
+          onRetry={() => {
+            setNoBranchAvailable(false);
+            loadData();
+          }}
+        />
+      ) : loading ? (
         <View style={s.centerContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={{ marginTop: hp(12), color: colors.textSecondary }}>Analysing orders...</Text>
