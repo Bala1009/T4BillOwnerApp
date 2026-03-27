@@ -294,19 +294,23 @@ export default function DashboardScreen() {
             <PremiumTotalSalesCard
               salesList={dashboardData.dashBoardSalesList || []}
               countData={dashboardData.dashBoardCount || {}}
+              expensesList={dashboardData.expensessDashBoardList || []}
               hourlyList={dashboardData.dashBoardHourlyList || []}
+              activeFilter={activeFilter}
             />
             <KPIGrid
               data={dashboardData.dashBoardCount}
               salesList={dashboardData.dashBoardSalesList || []}
+              expensesList={dashboardData.expensessDashBoardList || []}
               hourlyList={dashboardData.dashBoardHourlyList || []}
+              activeFilter={activeFilter}
             />
             <SalesChartSection
-              salesData={dashboardData.dashBoardSalesList}
-              hourlyData={dashboardData.dashBoardHourlyList}
+              salesData={dashboardData.dashBoardSalesList || []}
+              hourlyData={dashboardData.dashBoardHourlyList || []}
             />
             <PaymentDonutSection data={dashboardData.paymentSplitupList} />
-            <RevenueLeakage data={dashboardData.dashBoardCount} />
+            <RevenueLeakage data={Array.isArray(dashboardData.dashBoardCount) ? dashboardData.dashBoardCount[0] : dashboardData.dashBoardCount} />
             <TaxSummarySection data={dashboardData.dashBoardTaxList} />
             <ExpensesSection data={dashboardData.expensessDashBoardList} />
 
@@ -590,19 +594,21 @@ function SparklineMini({
 type KPIDataType = {
   title: string;
   value: string;
-  rawNum: number; // raw number for animated counter
+  rawNum: number; // raw number for animated counter (always >= 0 for display)
   change: string;
   up: boolean;
   icon:
     | "trending-up"
+    | "trending-down"
     | "shopping-bag"
     | "credit-card"
     | "dollar-sign"
     | "arrow-up-right"
     | "arrow-down-right"
+    | "minus"
     | "users";
-  colorKey: "green" | "blue" | "red" | "orange";
-  bgKey: "greenBg" | "blueBg" | "redBg" | "orangeBg";
+  colorKey: "green" | "blue" | "red" | "orange" | "textTertiary";
+  bgKey: "greenBg" | "blueBg" | "redBg" | "orangeBg" | "border";
   sparkline: number[];
 };
 
@@ -635,12 +641,14 @@ function AnimatedKPIValue({
     return () => anim.removeListener(id);
   }, [rawNum]);
 
+  // Use absolute value for formatting (sign/context handled by title/label)
+  const absDisplay = Math.abs(display);
   const formatted =
-    display >= 1000
-      ? display >= 100000
-        ? `${(display / 100000).toFixed(1)}L`
-        : `${(display / 1000).toFixed(1)}K`
-      : `${display}`;
+    absDisplay >= 1000
+      ? absDisplay >= 100000
+        ? `${(absDisplay / 100000).toFixed(1)}L`
+        : `${(absDisplay / 1000).toFixed(1)}K`
+      : `${absDisplay}`;
 
   return (
     <Text style={style} numberOfLines={1} adjustsFontSizeToFit>
@@ -689,19 +697,20 @@ function AnimatedKPICard({ item, colors }: { item: KPIDataType; colors: any }) {
           <View
             style={[
               s.kpiBadge,
-              { backgroundColor: item.up ? colors.greenBg : colors.redBg },
+              { backgroundColor: colors[item.bgKey] },
             ]}
           >
             <Feather
               name={item.up ? "arrow-up-right" : "arrow-down-right"}
               size={ms(12)}
-              color={item.up ? colors.green : colors.red}
+              color={colors[item.colorKey]}
             />
             <Text
               style={[
                 s.kpiBadgeText,
-                { color: item.up ? colors.green : colors.red },
+                { color: colors[item.colorKey] },
               ]}
+              numberOfLines={1}
             >
               {item.change}
             </Text>
@@ -796,44 +805,88 @@ function buildSparklines(salesList: any[], hourlyList: any[]) {
 function KPIGrid({
   data,
   salesList,
+  expensesList,
   hourlyList,
+  activeFilter,
 }: {
   data: any;
   salesList?: any[];
+  expensesList?: any[];
   hourlyList?: any[];
+  activeFilter?: string;
 }) {
   const { colors } = useTheme();
 
   if (!data) return null;
 
-  const todaysPayments = data?.todaysPayments || 0;
-  const todayExpenses = data?.todayExpenses || 0;
-  const totalBills = data?.totalBills || 0;
-  const cancelBills = data?.cancelBills || 0;
-  const totalCustomer = data?.totalCustomer || 0;
-  const profit = todaysPayments - todayExpenses;
+  // ── Normalize dashBoardCount: API may return it as an array [{...}] or object {...} ──
+  const countData = Array.isArray(data) ? (data[0] || {}) : (data || {});
 
-  // Compute dynamic change indicators
-  const profitMarginPct =
-    todaysPayments > 0 ? Math.round((profit / todaysPayments) * 100) : 0;
-  const expenseRatioPct =
-    todaysPayments > 0 ? Math.round((todayExpenses / todaysPayments) * 100) : 0;
+  // ── Extract Total Sales from dashBoardSalesList ("Total" row) ──
+  const totalEntry = (salesList || []).find(
+    (item: any) => (item.hours || "").trim().toLowerCase() === "total",
+  );
+  const totalSales = Number(totalEntry?.paidAmount) || 0;
+
+  // ── Calculate Total Expenses ──
+  // Primary source: sum of expenseAmount from expensessDashBoardList (matches breakdown section)
+  // Fallback: dashBoardCount fields (todayExpenses/weekExpenses/monthExpenses) if list is empty
+  const listExpenseSum = (expensesList || []).reduce(
+    (sum: number, item: any) => sum + (Number(item?.expenseAmount) || 0),
+    0,
+  );
+
+  let expenses = listExpenseSum;
+  if (expenses === 0) {
+    // Fallback to dashBoardCount fields only when expensessDashBoardList has no data
+    let fallback: any = 0;
+    if (activeFilter === "this_week") {
+      fallback = countData?.weekExpenses ?? countData?.todayExpenses ?? 0;
+    } else if (activeFilter === "this_month" || activeFilter === "last_month") {
+      fallback = countData?.monthExpenses ?? countData?.todayExpenses ?? 0;
+    } else {
+      fallback = countData?.todayExpenses ?? 0;
+    }
+    expenses = Number(fallback) || 0;
+  }
+
+  console.log("[KPIGrid] expenses:", expenses, "(listSum:", listExpenseSum, "| filter:", activeFilter, ")");
+
+  const totalBills = Number(countData?.totalBills) || 0;
+  const totalCustomer = Number(countData?.totalCustomer) || 0;
+
+  // ── Profit = Total Sales – Expenses ──
+  const profit = totalSales - expenses;
+
   const avgOrderValue =
-    totalBills > 0 ? Math.round(todaysPayments / totalBills) : 0;
+    totalBills > 0 ? Math.round(totalSales / totalBills) : 0;
 
   const sparks = buildSparklines(salesList || [], hourlyList || []);
 
-  // Zero-out sparkline data when the KPI aggregate value is 0
-  // This prevents the graph from showing a misleading trend from
-  // individual time-period data while the aggregate is actually zero.
   const FLAT = [0, 0, 0];
+
+  // ── Build simple, meaningful subtitles (no confusing percentages) ──
+  const expenseSubtitle = (() => {
+    if (expenses === 0) return "No expenses";
+    if (totalSales === 0) return "No sales yet";
+    // Only show % if it's a reasonable number (< 200%)
+    const pct = Math.round((expenses / totalSales) * 100);
+    if (pct <= 100) return `${pct}% of sales`;
+    return `Exceeds sales`;
+  })();
+
+  const profitSubtitle = (() => {
+    if (profit > 0) return "You earned profit";
+    if (profit < 0) return "Expenses exceed sales";
+    return "No profit or loss";
+  })();
 
   const mappedData: KPIDataType[] = [
     {
       title: "Total Customers",
       value: `${totalCustomer}`,
       rawNum: totalCustomer,
-      change: totalCustomer > 0 ? `+${totalCustomer} today` : `0 today`,
+      change: totalCustomer > 0 ? `${totalCustomer} today` : "0 today",
       up: totalCustomer >= 0,
       icon: "users",
       colorKey: "green",
@@ -844,7 +897,7 @@ function KPIGrid({
       title: "Total Bills",
       value: `${totalBills}`,
       rawNum: totalBills,
-      change: `Avg ₹${avgOrderValue.toLocaleString()}`,
+      change: totalBills > 0 ? `Avg ₹${avgOrderValue.toLocaleString()}` : "No bills",
       up: true,
       icon: "shopping-bag",
       colorKey: "blue",
@@ -852,25 +905,25 @@ function KPIGrid({
       sparkline: totalBills > 0 ? sparks.bills : FLAT,
     },
     {
-      title: "Expenses",
-      value: `₹${todayExpenses.toLocaleString()}`,
-      rawNum: todayExpenses,
-      change: `${expenseRatioPct}% of rev`,
+      title: "Total Expenses",
+      value: `₹${expenses.toLocaleString()}`,
+      rawNum: expenses,
+      change: expenseSubtitle,
       up: false,
       icon: "credit-card",
       colorKey: "red",
       bgKey: "redBg",
-      sparkline: todayExpenses > 0 ? sparks.expenses : FLAT,
+      sparkline: expenses > 0 ? sparks.expenses : FLAT,
     },
     {
       title: "Profit",
-      value: `₹${profit.toLocaleString()}`,
-      rawNum: profit,
-      change: `${profitMarginPct}%`,
-      up: profit >= 0,
-      icon: "dollar-sign",
-      colorKey: profit >= 0 ? "green" : "red",
-      bgKey: profit >= 0 ? "greenBg" : "redBg",
+      value: `₹${Math.abs(profit).toLocaleString()}`,
+      rawNum: Math.abs(profit),
+      change: profitSubtitle,
+      up: profit > 0,
+      icon: profit > 0 ? "trending-up" : profit < 0 ? "trending-down" : "minus",
+      colorKey: profit > 0 ? "green" : profit < 0 ? "red" : "textTertiary",
+      bgKey: profit > 0 ? "greenBg" : profit < 0 ? "redBg" : "border",
       sparkline: profit !== 0 ? sparks.profit : FLAT,
     },
   ];
@@ -884,7 +937,9 @@ function KPIGrid({
   );
 }
 
-// ─── Semi-Circular Gauge Component ──────────────────────────
+
+
+// ─ Semi-Circular Gauge Component ─
 function SemiCircularGauge({
   progress,
   size,
@@ -907,7 +962,6 @@ function SemiCircularGauge({
     }).start();
   }, [progress]);
 
-  // Animated numeric value for dash calculations
   const [animFraction, setAnimFraction] = useState(0);
   useEffect(() => {
     const id = dashAnim.addListener(({ value }: { value: number }) => {
@@ -916,44 +970,21 @@ function SemiCircularGauge({
     return () => dashAnim.removeListener(id);
   }, [dashAnim, progress]);
 
-  // ── Geometry ──
-  const pad = strokeWidth / 2 + 6; // padding to avoid clipping round caps
+  const pad = strokeWidth / 2 + 6;
   const radius = (size - pad * 2) / 2;
   const cx = size / 2;
-  const cy = pad + radius; // arc center at bottom of the half-circle
-  const svgH = cy + strokeWidth / 2 + 6; // include bottom stroke + margin
-
-  const trackThickness = strokeWidth * 0.55; // base track thinner than progress
-
-  // Arc length of the full semi-circle
+  const cy = pad + radius;
+  const svgH = cy + strokeWidth / 2 + 6;
+  const trackThickness = strokeWidth * 0.55;
   const fullArcLen = Math.PI * radius;
-
-  // Helper to get cartesian point on the arc
-  // angle: 0 = right side, PI = left side  (standard math convention)
-  // SVG y-axis is inverted, so we use cy - r*sin
   const arcX = (angle: number) => cx + radius * Math.cos(angle);
   const arcY = (angle: number) => cy - radius * Math.sin(angle);
-
-  // Full semi-circle path from left (PI) to right (0)
   const trackPath = [
     `M ${arcX(Math.PI).toFixed(2)} ${arcY(Math.PI).toFixed(2)}`,
     `A ${radius.toFixed(2)} ${radius.toFixed(2)} 0 0 1 ${arcX(0).toFixed(2)} ${arcY(0).toFixed(2)}`,
   ].join(" ");
-
-  // Progress arc — same path, but we use strokeDasharray to clip it
-  // dashArray = [filled, gap]
   const filledLen = animFraction * fullArcLen;
   const gapLen = fullArcLen - filledLen;
-
-  // End-marker: angle where the progress stops
-  const progAngle = Math.PI * (1 - animFraction);
-  const markerHalf = strokeWidth * 0.45;
-  const mdx = Math.cos(progAngle);
-  const mdy = -Math.sin(progAngle); // SVG y inverted
-  const mX1 = cx + (radius - markerHalf) * mdx;
-  const mY1 = cy + (radius - markerHalf) * mdy;
-  const mX2 = cx + (radius + markerHalf) * mdx;
-  const mY2 = cy + (radius + markerHalf) * mdy;
 
   return (
     <Svg width={size} height={svgH} viewBox={`0 0 ${size} ${svgH}`}>
@@ -964,36 +995,9 @@ function SemiCircularGauge({
           <Stop offset="1" stopColor="#8B5CF6" stopOpacity="1" />
         </LinearGradient>
       </Defs>
-
-      {/* Base track arc (thinner, light gray) */}
-      <Path
-        d={trackPath}
-        fill="none"
-        stroke="rgba(100,116,139,0.12)"
-        strokeWidth={trackThickness}
-        strokeLinecap="round"
-      />
-
-      {/* Progress arc (thicker, gradient, dash-clipped for smooth animation) */}
+      <Path d={trackPath} fill="none" stroke="rgba(100,116,139,0.12)" strokeWidth={trackThickness} strokeLinecap="round" />
       {animFraction > 0.003 && (
-        <Path
-          d={trackPath}
-          fill="none"
-          stroke="url(#gaugeGrad)"
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          strokeDasharray={`${filledLen.toFixed(2)}, ${gapLen.toFixed(2)}`}
-        />
-      )}
-
-      {/* End-marker tick at progress stop */}
-      {animFraction > 0.03 && animFraction < 0.97 && (
-        <Path
-          d={`M ${mX1.toFixed(2)} ${mY1.toFixed(2)} L ${mX2.toFixed(2)} ${mY2.toFixed(2)}`}
-          stroke="rgba(100,116,139,0.3)"
-          strokeWidth={2}
-          strokeLinecap="round"
-        />
+        <Path d={trackPath} fill="none" stroke="url(#gaugeGrad)" strokeWidth={strokeWidth} strokeLinecap="round" strokeDasharray={`${filledLen.toFixed(2)}, ${gapLen.toFixed(2)}`} />
       )}
     </Svg>
   );
@@ -1003,116 +1007,89 @@ function SemiCircularGauge({
 function PremiumTotalSalesCard({
   salesList,
   countData,
+  expensesList,
   hourlyList,
+  activeFilter,
 }: {
   salesList: any[];
   countData: any;
+  expensesList?: any[];
   hourlyList: any[];
+  activeFilter?: string;
 }) {
   const { colors, isDark } = useTheme();
   const { Animated: RNAnimated, Easing: RNEasing } = require("react-native");
 
-  // ── Extract total sales from dashBoardSalesList where hours === "Total " ──
+  // ── Normalize countData: API may return dashBoardCount as an array [{...}] ──
+  const normalizedCount = Array.isArray(countData) ? (countData[0] || {}) : (countData || {});
+
+  // ── Extract total sales from dashBoardSalesList ──
   const totalEntry = (salesList || []).find(
     (item: any) => (item.hours || "").trim().toLowerCase() === "total",
   );
-  const totalPaidAmt = totalEntry?.paidAmount || 0;
+  const totalPaidAmt = Number(totalEntry?.paidAmount) || 0;
+  const totalBillCount = Number(totalEntry?.billCount) || Number(normalizedCount?.totalBills) || 0;
+
+  // ── Calculate expenses: sum from expensessDashBoardList, fallback to dashBoardCount ──
+  const listExpenseSum = (expensesList || []).reduce(
+    (sum: number, item: any) => sum + (Number(item?.expenseAmount) || 0),
+    0,
+  );
+  let expenses = listExpenseSum;
+  if (expenses === 0) {
+    let fallback: any = 0;
+    if (activeFilter === "this_week") {
+      fallback = normalizedCount?.weekExpenses ?? normalizedCount?.todayExpenses ?? 0;
+    } else if (activeFilter === "this_month" || activeFilter === "last_month") {
+      fallback = normalizedCount?.monthExpenses ?? normalizedCount?.todayExpenses ?? 0;
+    } else {
+      fallback = normalizedCount?.todayExpenses ?? 0;
+    }
+    expenses = Number(fallback) || 0;
+  }
+  const profit = totalPaidAmt - expenses;
 
   // ── Sales amount counter animation ──
   const [animVal, setAnimVal] = useState(0);
   useEffect(() => {
-    if (totalPaidAmt === 0) {
-      setAnimVal(0);
-      return;
-    }
+    if (totalPaidAmt === 0) { setAnimVal(0); return; }
     const anim = new RNAnimated.Value(0);
-    const id = anim.addListener(({ value }: { value: number }) => {
-      setAnimVal(Math.round(value));
-    });
-    RNAnimated.timing(anim, {
-      toValue: totalPaidAmt,
-      duration: 950,
-      easing: RNEasing.out(RNEasing.cubic),
-      useNativeDriver: false,
-    }).start();
+    const id = anim.addListener(({ value }: { value: number }) => setAnimVal(Math.round(value)));
+    RNAnimated.timing(anim, { toValue: totalPaidAmt, duration: 950, easing: RNEasing.out(RNEasing.cubic), useNativeDriver: false }).start();
     return () => anim.removeListener(id);
   }, [totalPaidAmt]);
 
-  const formattedTotal =
-    totalPaidAmt > 0 && animVal > 0 ? `₹${animVal.toLocaleString()}` : "₹0";
+  const formattedTotal = totalPaidAmt > 0 && animVal > 0 ? `₹${animVal.toLocaleString()}` : "₹0";
 
-  // ── Progress (gauge fill ratio) ──
-  // Calculate a meaningful progress percentage:
-  // Use the highest individual entry (non-total) paidAmount as the max reference.
-  // This way the total sales is always >= max entry, giving a ratio < 1.
-  // Example: if hourly data has max ₹500 and total is ₹1904,
-  //          then progress = 1904 / (1904 * some_scale) — we use a
-  //          dynamic max to produce a visually meaningful gauge.
-
-  let progressRatio = 0;
-
+  // ── Gauge: clean profit/loss indicator ──
+  let gaugeRatio = 0;
+  let gaugeLabel = "No Sales Yet";
+  let gaugeValueText = "₹0";
   if (totalPaidAmt > 0) {
-    // Collect individual (non-total) entries
-    const nonTotalEntries = (salesList || []).filter(
-      (item: any) => (item.hours || "").trim().toLowerCase() !== "total",
-    );
-    // Also check hourlyList for finer-grained max
-    const hourlyEntries = (hourlyList || []).filter(
-      (item: any) => (item.hours || "").trim().toLowerCase() !== "total",
-    );
-
-    // Find the highest individual paidAmount across all entries
-    const allEntries = [...nonTotalEntries, ...hourlyEntries];
-    const maxEntryValue = allEntries.reduce(
-      (max: number, e: any) => Math.max(max, e.paidAmount || 0),
-      0,
-    );
-
-    if (maxEntryValue > 0 && maxEntryValue < totalPaidAmt) {
-      // Total / (Total + MaxEntry) gives a ratio that's always < 1
-      // and scales meaningfully with data distribution
-      progressRatio = totalPaidAmt / (totalPaidAmt + maxEntryValue);
-    } else if (nonTotalEntries.length > 1) {
-      // Multiple entries: use count-based heuristic
-      // More entries with data = higher achievement
-      const entriesWithSales = nonTotalEntries.filter(
-        (e: any) => (e.paidAmount || 0) > 0,
-      ).length;
-      progressRatio = Math.min(
-        entriesWithSales / Math.max(nonTotalEntries.length, 1),
-        0.95,
-      );
+    gaugeRatio = Math.max(0.05, Math.min(Math.abs(profit) / totalPaidAmt, 0.95));
+    if (profit > 0) {
+      gaugeLabel = "Profit";
+      gaugeValueText = `₹${Math.abs(profit).toLocaleString()}`;
+    } else if (profit < 0) {
+      gaugeLabel = "Loss";
+      gaugeValueText = `₹${Math.abs(profit).toLocaleString()}`;
     } else {
-      // Single entry or no breakdown — use a moderate default
-      progressRatio = 0.65;
+      gaugeLabel = "Break-even";
+      gaugeValueText = "₹0";
+      gaugeRatio = 0;
     }
-
-    // Clamp to [0.08, 0.95] for visual clarity
-    progressRatio = Math.max(0.08, Math.min(progressRatio, 0.95));
   }
-  // When totalPaidAmt is 0, progressRatio stays 0 → arc at starting position
-
-  const progressPct = Math.round(progressRatio * 100);
 
   // ── Card press scale ──
   const [scaleAnim] = useState(new RNAnimated.Value(1));
   const handlePressIn = () =>
-    RNAnimated.spring(scaleAnim, {
-      toValue: 0.97,
-      useNativeDriver: true,
-    }).start();
+    RNAnimated.spring(scaleAnim, { toValue: 0.97, useNativeDriver: true }).start();
   const handlePressOut = () =>
-    RNAnimated.spring(scaleAnim, {
-      toValue: 1,
-      friction: 4,
-      tension: 40,
-      useNativeDriver: true,
-    }).start();
+    RNAnimated.spring(scaleAnim, { toValue: 1, friction: 4, tension: 40, useNativeDriver: true }).start();
 
-  // Gauge size — responsive to full card width
+  // Gauge size
   const [cardWidth, setCardWidth] = useState(0);
-  const gaugeSize =
-    cardWidth > 0 ? Math.min(cardWidth - wp(40), wp(280)) : wp(260);
+  const gaugeSize = cardWidth > 0 ? Math.min(cardWidth - wp(40), wp(280)) : wp(260);
   const strokeW = wp(20);
 
   return (
@@ -1120,23 +1097,13 @@ function PremiumTotalSalesCard({
       <Pressable onPressIn={handlePressIn} onPressOut={handlePressOut}>
         <RNAnimated.View
           style={[s.premiumCardContent, { transform: [{ scale: scaleAnim }] }]}
-          onLayout={(e: LayoutChangeEvent) =>
-            setCardWidth(e.nativeEvent.layout.width)
-          }
+          onLayout={(e: LayoutChangeEvent) => setCardWidth(e.nativeEvent.layout.width)}
         >
           {/* ── Header row ── */}
           <View style={s.gaugeHeaderRow}>
-            <Text
-              style={[s.premiumTitleGauge, { color: colors.textSecondary }]}
-            >
+            <Text style={[s.premiumTitleGauge, { color: colors.textSecondary }]}>
               Total Sales
             </Text>
-            <View style={[s.gaugeBadge, { backgroundColor: colors.blueBg }]}>
-              <Feather name="trending-up" size={ms(12)} color={colors.blue} />
-              <Text style={[s.gaugeBadgeText, { color: colors.blue }]}>
-                Sales
-              </Text>
-            </View>
           </View>
 
           {/* ── Amount ── */}
@@ -1151,22 +1118,20 @@ function PremiumTotalSalesCard({
           <View style={s.gaugeSVGWrapper}>
             {cardWidth > 0 && (
               <SemiCircularGauge
-                progress={progressRatio}
+                progress={gaugeRatio}
                 size={gaugeSize}
                 strokeWidth={strokeW}
               />
             )}
           </View>
 
-          {/* ── Percentage label below gauge ── */}
+          {/* ── Clean label below gauge ── */}
           <View style={s.gaugeBottomRow}>
-            <Text style={[s.gaugePctText, { color: "#6366F1" }]}>
-              {progressPct}%
+            <Text style={[s.gaugePctText, { color: profit > 0 ? "#10B981" : profit < 0 ? "#EF4444" : colors.textTertiary }]}>
+              {gaugeValueText}
             </Text>
-            <Text
-              style={[s.gaugeAchievedText, { color: colors.textSecondary }]}
-            >
-              {totalPaidAmt > 0 ? "Achieved so far" : "No Sales Yet"}
+            <Text style={[s.gaugeAchievedText, { color: colors.textSecondary }]}>
+              {gaugeLabel}
             </Text>
           </View>
         </RNAnimated.View>
@@ -1175,8 +1140,36 @@ function PremiumTotalSalesCard({
   );
 }
 
-// ─── Payment Pie Chart (Modern) ────────────────────────────
 
+// ─── Order Type Icons & Colors ──────────────────────────────
+const ORDER_TYPE_ICONS: Record<string, { name: string; family: 'feather' | 'ionicons' | 'mci' }> = {
+  'delivery': { name: 'truck', family: 'feather' },
+  'dine in': { name: 'home', family: 'feather' },
+  'dine-in': { name: 'home', family: 'feather' },
+  'take away': { name: 'shopping-bag', family: 'feather' },
+  'takeaway': { name: 'shopping-bag', family: 'feather' },
+  'take-away': { name: 'shopping-bag', family: 'feather' },
+  'cancel bills': { name: 'x-circle', family: 'feather' },
+  'cancelled': { name: 'x-circle', family: 'feather' },
+  'compliment bills': { name: 'gift', family: 'feather' },
+  'complimentary bills': { name: 'gift', family: 'feather' },
+  'complimentary': { name: 'gift', family: 'feather' },
+  'whole sales vendor': { name: 'briefcase', family: 'feather' },
+  'wholesale vendor': { name: 'briefcase', family: 'feather' },
+  'wholesale': { name: 'briefcase', family: 'feather' },
+  'whole sales': { name: 'briefcase', family: 'feather' },
+  'online': { name: 'globe', family: 'feather' },
+  'counter': { name: 'monitor', family: 'feather' },
+  'swiggy': { name: 'smartphone', family: 'feather' },
+  'zomato': { name: 'smartphone', family: 'feather' },
+};
+
+const ORDER_TYPE_COLORS: string[] = [
+  '#3B82F6', '#10B981', '#F59E0B', '#8B5CF6', '#EF4444',
+  '#14B8A6', '#F97316', '#EC4899', '#6366F1', '#06B6D4',
+];
+
+// ─── Unified Sales Chart + Order Types Section ──────────────
 function SalesChartSection({
   salesData,
   hourlyData,
@@ -1184,8 +1177,9 @@ function SalesChartSection({
   salesData: any[];
   hourlyData: any[];
 }) {
-  const { colors } = useTheme();
-  const [period, setPeriod] = useState<"sales" | "hourly">("sales");
+  const { colors, isDark } = useTheme();
+  const [period, setPeriod] = useState<"sales" | "hourly" | "orderTypes">("sales");
+  const otScrollRef = useRef<ScrollView>(null);
   const [areaWidth, setAreaWidth] = useState(0);
 
   const formatXLabel = (val: string, currentPeriod: "sales" | "hourly") => {
@@ -1261,32 +1255,77 @@ function SalesChartSection({
   const toTitleCase = (s: string) =>
     s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 
-  // For sales/overview, exclude the "Total" entry (it's shown in the gauge card)
+  // ── Order Types data (for the "orderTypes" tab) ──
+  // Filter: exclude "Total" row and any entries with null/empty hours
+  const otFilteredData = React.useMemo(() => {
+    const raw = salesData || [];
+    const filtered = raw.filter((item: any) => {
+      const hours = (item.hours || '').trim();
+      if (!hours) return false; // exclude null/empty
+      if (hours.toLowerCase() === 'total') return false; // exclude total row
+      return true;
+    });
+    console.log("[OrderTypes] Filtered order types:", filtered.length, "from", raw.length, "total entries");
+    return filtered;
+  }, [salesData]);
+
+  const otTotalAmount = otFilteredData.reduce(
+    (sum: number, item: any) => sum + (Number(item.paidAmount) || 0), 0,
+  );
+  const otTotalBills = otFilteredData.reduce(
+    (sum: number, item: any) => sum + (Number(item.billCount) || 0), 0,
+  );
+  const otMappedData = otFilteredData.map((item: any, index: number) => {
+    const orderType = (item.hours || 'Unknown').trim();
+    const lowerType = orderType.toLowerCase();
+    const iconInfo = ORDER_TYPE_ICONS[lowerType] || { name: 'tag', family: 'feather' as const };
+    const color = ORDER_TYPE_COLORS[index % ORDER_TYPE_COLORS.length];
+    const amount = Number(item.paidAmount) || 0;
+    const billCount = Number(item.billCount) || 0;
+    const pct = otTotalAmount > 0 ? amount / otTotalAmount : 0;
+    return {
+      label: orderType,
+      amount,
+      billCount,
+      icon: iconInfo,
+      color,
+      pct,
+    };
+  });
+  const otSortedData = [...otMappedData].sort((a, b) => b.amount - a.amount);
+
+  // For sales/overview, exclude the "Total" entry (it's shown in the total sales card)
+  const isChartPeriod = period === "sales" || period === "hourly";
   const rawData = period === "sales" ? salesData || [] : hourlyData || [];
   const activeData =
     period === "sales"
-      ? rawData.filter(
-          (d: any) => (d.hours || "").trim().toLowerCase() !== "total",
-        )
+      ? rawData.filter((d: any) => {
+          const h = (d.hours || "").trim();
+          return h && h.toLowerCase() !== "total";
+        })
       : rawData;
-  const hasData = activeData.length > 0;
-  const chartData = hasData
+  const hasData = isChartPeriod ? activeData.length > 0 : otFilteredData.length > 0;
+  const chartData = isChartPeriod && activeData.length > 0
     ? activeData.map((d: any) => ({
-        label: formatXLabel(d.hours, period),
-        value: d.paidAmount || 0,
+        label: formatXLabel(d.hours, period as "sales" | "hourly"),
+        value: Number(d.paidAmount) || 0,
       }))
     : [];
 
-  let maxVal = hasData ? Math.max(...chartData.map((d) => d.value)) : 0;
+  let maxVal = chartData.length > 0 ? Math.max(...chartData.map((d) => d.value)) : 0;
   if (maxVal === 0) maxVal = 1;
 
-  const total = chartData.reduce((sum, d) => sum + d.value, 0);
-  const dataPointCount = activeData.length;
+  const total = isChartPeriod
+    ? chartData.reduce((sum, d) => sum + d.value, 0)
+    : otTotalAmount;
+  const dataPointCount = isChartPeriod ? activeData.length : otFilteredData.length;
   const summary = {
     total: `₹${total.toLocaleString()}`,
     change:
       dataPointCount > 0
-        ? `${dataPointCount} ${period === "hourly" ? "hours" : "entries"}`
+        ? period === "orderTypes"
+          ? `${dataPointCount} types`
+          : `${dataPointCount} ${period === "hourly" ? "hours" : "entries"}`
         : "No data",
     up: total > 0,
   };
@@ -1294,7 +1333,9 @@ function SalesChartSection({
   const emptyMessage =
     period === "hourly"
       ? "No hourly sales data available"
-      : "No sales data available for this period";
+      : period === "orderTypes"
+        ? "No order type data available"
+        : "No sales data available for this period";
 
   const chartH = hp(200);
   const ySteps = 4;
@@ -1312,37 +1353,33 @@ function SalesChartSection({
 
   return (
     <Card>
-      <SectionHeader
-        title="Sales Overview"
-        rightElement={
-          <View
-            style={[s.chartPillsContainer, { backgroundColor: colors.cardAlt }]}
+      <SectionHeader title="Sales Overview" />
+
+      {/* ── Full-width tab row (prevents overflow) ── */}
+      <View style={[s.salesTabRow, { backgroundColor: colors.cardAlt }]}>
+        {(["sales", "hourly", "orderTypes"] as const).map((p) => (
+          <TouchableOpacity
+            key={p}
+            onPress={() => setPeriod(p)}
+            activeOpacity={0.7}
+            style={[
+              s.salesTab,
+              period === p
+                ? { backgroundColor: colors.primary }
+                : { backgroundColor: "transparent" },
+            ]}
           >
-            {(["sales", "hourly"] as const).map((p) => (
-              <TouchableOpacity
-                key={p}
-                onPress={() => setPeriod(p)}
-                activeOpacity={0.7}
-                style={[
-                  s.chartPill,
-                  period === p
-                    ? { backgroundColor: colors.primary }
-                    : { backgroundColor: "transparent" },
-                ]}
-              >
-                <Text
-                  style={[
-                    s.chartPillText,
-                    { color: period === p ? "#FFFFFF" : colors.textTertiary },
-                  ]}
-                >
-                  {p === "sales" ? "Overview" : "Hourly"}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        }
-      />
+            <Text
+              style={[
+                s.salesTabText,
+                { color: period === p ? "#FFFFFF" : colors.textTertiary },
+              ]}
+            >
+              {p === "sales" ? "Overview" : p === "hourly" ? "Hourly" : "Order Types"}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
 
       {/* Total */}
       <View style={s.chartTotalRow}>
@@ -1371,8 +1408,125 @@ function SalesChartSection({
         </View>
       </View>
 
-      {/* Chart */}
-      {hasData ? (
+      {/* Chart or Order Types View */}
+      {hasData && period === "orderTypes" ? (
+        <>
+          {/* ── Stacked Progress Bar ── */}
+          <View style={[s.otStackedBar, { backgroundColor: colors.border + '30' }]}>
+            {otSortedData.map((item, i) => (
+              <View
+                key={`bar-${i}`}
+                style={[
+                  s.otStackedSeg,
+                  {
+                    width: `${Math.max(item.pct * 100, 2)}%`,
+                    backgroundColor: item.color,
+                    borderTopLeftRadius: i === 0 ? wp(6) : 0,
+                    borderBottomLeftRadius: i === 0 ? wp(6) : 0,
+                    borderTopRightRadius: i === otSortedData.length - 1 ? wp(6) : 0,
+                    borderBottomRightRadius: i === otSortedData.length - 1 ? wp(6) : 0,
+                  },
+                ]}
+              />
+            ))}
+          </View>
+
+          {/* ── Scrollable Order Type Cards ── */}
+          <ScrollView
+            ref={otScrollRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.otCardsRow}
+            decelerationRate="fast"
+            snapToAlignment="start"
+          >
+            {otSortedData.map((item, i) => (
+              <Pressable
+                key={`card-${i}`}
+                style={({ pressed }) => [
+                  s.otCard,
+                  {
+                    backgroundColor: isDark ? item.color + '12' : item.color + '08',
+                    borderColor: item.color + (isDark ? '30' : '20'),
+                    borderWidth: 1,
+                    transform: [{ scale: pressed ? 0.97 : 1 }],
+                  },
+                ]}
+              >
+                {/* Icon */}
+                <View
+                  style={[
+                    s.otCardIcon,
+                    { backgroundColor: item.color + '20' },
+                  ]}
+                >
+                  <Feather
+                    name={item.icon.name as any}
+                    size={ms(20)}
+                    color={item.color}
+                  />
+                </View>
+
+                {/* Order Type Name */}
+                <Text
+                  style={[s.otCardLabel, { color: colors.textPrimary }]}
+                  numberOfLines={2}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.8}
+                >
+                  {item.label}
+                </Text>
+
+                {/* Bill Count */}
+                <View style={s.otCardOrdersRow}>
+                  <Feather name="file-text" size={ms(11)} color={colors.textTertiary} />
+                  <Text style={[s.otCardOrders, { color: colors.textTertiary }]}>
+                    {item.billCount} {item.billCount === 1 ? 'order' : 'orders'}
+                  </Text>
+                </View>
+
+                {/* Sales Amount */}
+                <Text style={[s.otCardSales, { color: item.color }]}>
+                  ₹{item.amount.toLocaleString()}
+                </Text>
+
+                {/* Percentage Badge */}
+                <View style={[s.otPctBadge, { backgroundColor: item.color + '18' }]}>
+                  <Text style={[s.otPctText, { color: item.color }]}>
+                    {Math.round(item.pct * 100)}%
+                  </Text>
+                </View>
+              </Pressable>
+            ))}
+          </ScrollView>
+
+          {/* ── Total Summary Row ── */}
+          <View style={[s.otTotalRow, { borderTopColor: colors.border }]}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: wp(8) }}>
+              <View
+                style={{
+                  width: ms(28),
+                  height: ms(28),
+                  borderRadius: ms(8),
+                  backgroundColor: colors.primaryLight,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                }}
+              >
+                <Feather name="bar-chart-2" size={ms(14)} color={colors.primary} />
+              </View>
+              <View>
+                <Text style={[s.otTotalLabel, { color: colors.textSecondary }]}>
+                  Total ({otTotalBills} orders)
+                </Text>
+              </View>
+            </View>
+            <Text style={[s.otTotalValue, { color: colors.primary }]}>
+              ₹{otTotalAmount.toLocaleString()}
+            </Text>
+          </View>
+        </>
+      ) : hasData ? (
         <View style={s.chartContainer}>
           {/* Y axis labels */}
           <View style={[s.yAxis, { height: chartH }]}>
@@ -2236,8 +2390,6 @@ function ExpensesSection({ data }: { data: any[] }) {
   );
 }
 
-
-
 // ─── Item Ranking Section (Accordion) ──────────────────────
 type RankItem = {
   name: string;
@@ -2642,8 +2794,11 @@ const s = StyleSheet.create({
     paddingVertical: hp(4),
     borderRadius: wp(8),
     gap: wp(2),
+    maxWidth: "60%",
+    flexShrink: 1,
+    overflow: "hidden",
   },
-  kpiBadgeText: { fontSize: ms(11), fontWeight: "700" },
+  kpiBadgeText: { fontSize: ms(10), fontWeight: "700", flexShrink: 1 },
   kpiContentWrap: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -2675,6 +2830,25 @@ const s = StyleSheet.create({
     borderRadius: wp(8),
   },
   chartPillText: { fontSize: ms(11), fontWeight: "700" },
+  // Full-width tab row for Sales section
+  salesTabRow: {
+    flexDirection: "row",
+    borderRadius: wp(12),
+    padding: wp(3),
+    marginTop: hp(12),
+    marginBottom: hp(4),
+  },
+  salesTab: {
+    flex: 1,
+    paddingVertical: hp(8),
+    borderRadius: wp(10),
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  salesTabText: {
+    fontSize: ms(12),
+    fontWeight: "700",
+  },
   chartTotalRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -2800,76 +2974,99 @@ const s = StyleSheet.create({
   },
 
   // Order Types
+  otBadgeWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: wp(10),
+    paddingVertical: hp(5),
+    borderRadius: wp(20),
+    gap: wp(4),
+  },
+  otBadgeText: {
+    fontSize: ms(12),
+    fontWeight: '700',
+  },
   otStackedBar: {
-    flexDirection: "row",
+    flexDirection: 'row',
     height: hp(10),
     borderRadius: wp(6),
-    overflow: "hidden",
-    marginTop: hp(18),
+    overflow: 'hidden',
+    marginTop: hp(4),
+    marginHorizontal: wp(16),
     gap: wp(3),
   },
   otStackedSeg: {
-    height: "100%",
+    height: '100%',
   },
   otCardsRow: {
-    flexDirection: "row",
-    gap: wp(10),
+    flexDirection: 'row',
+    gap: wp(12),
     marginTop: hp(16),
+    paddingHorizontal: wp(16),
+    paddingBottom: hp(4),
   },
   otCard: {
-    flex: 1,
-    borderRadius: wp(16),
-    padding: wp(12),
-    alignItems: "center",
+    width: wp(130),
+    borderRadius: wp(18),
+    padding: wp(14),
+    alignItems: 'center',
   },
   otCardIcon: {
-    width: wp(40),
-    height: wp(40),
-    borderRadius: wp(12),
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: hp(8),
+    width: wp(42),
+    height: wp(42),
+    borderRadius: wp(13),
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: hp(10),
   },
   otCardLabel: {
     fontSize: ms(13),
-    fontWeight: "700",
-    marginBottom: hp(2),
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: hp(4),
+    minHeight: ms(32),
+  },
+  otCardOrdersRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: wp(4),
+    marginBottom: hp(8),
   },
   otCardOrders: {
     fontSize: ms(11),
-    fontWeight: "500",
-    marginBottom: hp(6),
+    fontWeight: '500',
   },
   otCardSales: {
-    fontSize: ms(15),
-    fontWeight: "800",
+    fontSize: ms(16),
+    fontWeight: '800',
     letterSpacing: -0.3,
-    marginBottom: hp(8),
+    marginBottom: hp(10),
   },
   otPctBadge: {
-    paddingHorizontal: wp(10),
-    paddingVertical: hp(4),
-    borderRadius: wp(8),
+    paddingHorizontal: wp(12),
+    paddingVertical: hp(5),
+    borderRadius: wp(10),
   },
   otPctText: {
     fontSize: ms(12),
-    fontWeight: "700",
+    fontWeight: '700',
   },
   otTotalRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginTop: hp(14),
+    marginHorizontal: wp(16),
     paddingTop: hp(14),
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   otTotalLabel: {
     fontSize: ms(13),
-    fontWeight: "500",
+    fontWeight: '500',
   },
   otTotalValue: {
-    fontSize: ms(16),
-    fontWeight: "800",
+    fontSize: ms(17),
+    fontWeight: '800',
   },
 
   // Revenue Leakage
