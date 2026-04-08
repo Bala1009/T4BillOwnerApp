@@ -291,19 +291,10 @@ export default function DashboardScreen() {
           </View>
         ) : dashboardData ? (
           <>
-            <PremiumTotalSalesCard
+            <HourlySalesCard
               salesList={dashboardData.dashBoardSalesList || []}
               countData={dashboardData.dashBoardCount || {}}
-              expensesList={dashboardData.expensessDashBoardList || []}
               hourlyList={dashboardData.dashBoardHourlyList || []}
-              activeFilter={activeFilter}
-            />
-            <KPIGrid
-              data={dashboardData.dashBoardCount}
-              salesList={dashboardData.dashBoardSalesList || []}
-              expensesList={dashboardData.expensessDashBoardList || []}
-              hourlyList={dashboardData.dashBoardHourlyList || []}
-              activeFilter={activeFilter}
             />
             <SalesChartSection
               salesData={dashboardData.dashBoardSalesList || []}
@@ -345,6 +336,13 @@ export default function DashboardScreen() {
               data={mapItemToList(lowByQtyRaw, true)}
               primaryLabel="Qty Sold"
               secondaryLabel="Revenue"
+            />
+            <KPIGrid
+              data={dashboardData.dashBoardCount}
+              salesList={dashboardData.dashBoardSalesList || []}
+              expensesList={dashboardData.expensessDashBoardList || []}
+              hourlyList={dashboardData.dashBoardHourlyList || []}
+              activeFilter={activeFilter}
             />
           </>
         ) : null}
@@ -939,203 +937,358 @@ function KPIGrid({
 
 
 
-// ─ Semi-Circular Gauge Component ─
-function SemiCircularGauge({
-  progress,
-  size,
-  strokeWidth,
-}: {
-  progress: number; // 0 to 1
-  size: number;
-  strokeWidth: number;
-}) {
-  const { Animated: RNAnimated, Easing: RNEasing } = require("react-native");
-  const dashAnim = useRef(new RNAnimated.Value(0)).current;
-
-  useEffect(() => {
-    dashAnim.setValue(0);
-    RNAnimated.timing(dashAnim, {
-      toValue: 1,
-      duration: 900,
-      easing: RNEasing.out(RNEasing.cubic),
-      useNativeDriver: false,
-    }).start();
-  }, [progress]);
-
-  const [animFraction, setAnimFraction] = useState(0);
-  useEffect(() => {
-    const id = dashAnim.addListener(({ value }: { value: number }) => {
-      setAnimFraction(value * progress);
-    });
-    return () => dashAnim.removeListener(id);
-  }, [dashAnim, progress]);
-
-  const pad = strokeWidth / 2 + 6;
-  const radius = (size - pad * 2) / 2;
-  const cx = size / 2;
-  const cy = pad + radius;
-  const svgH = cy + strokeWidth / 2 + 6;
-  const trackThickness = strokeWidth * 0.55;
-  const fullArcLen = Math.PI * radius;
-  const arcX = (angle: number) => cx + radius * Math.cos(angle);
-  const arcY = (angle: number) => cy - radius * Math.sin(angle);
-  const trackPath = [
-    `M ${arcX(Math.PI).toFixed(2)} ${arcY(Math.PI).toFixed(2)}`,
-    `A ${radius.toFixed(2)} ${radius.toFixed(2)} 0 0 1 ${arcX(0).toFixed(2)} ${arcY(0).toFixed(2)}`,
-  ].join(" ");
-  const filledLen = animFraction * fullArcLen;
-  const gapLen = fullArcLen - filledLen;
-
-  return (
-    <Svg width={size} height={svgH} viewBox={`0 0 ${size} ${svgH}`}>
-      <Defs>
-        <LinearGradient id="gaugeGrad" x1="0" y1="0" x2="1" y2="0">
-          <Stop offset="0" stopColor="#3B82F6" stopOpacity="1" />
-          <Stop offset="0.5" stopColor="#6366F1" stopOpacity="1" />
-          <Stop offset="1" stopColor="#8B5CF6" stopOpacity="1" />
-        </LinearGradient>
-      </Defs>
-      <Path d={trackPath} fill="none" stroke="rgba(100,116,139,0.12)" strokeWidth={trackThickness} strokeLinecap="round" />
-      {animFraction > 0.003 && (
-        <Path d={trackPath} fill="none" stroke="url(#gaugeGrad)" strokeWidth={strokeWidth} strokeLinecap="round" strokeDasharray={`${filledLen.toFixed(2)}, ${gapLen.toFixed(2)}`} />
-      )}
-    </Svg>
-  );
-}
-
-// ─── Premium Total Sales Gauge Card ────────────────────────────
-function PremiumTotalSalesCard({
+// ─── Hourly Sales Bar Chart Card ────────────────────────────────
+function HourlySalesCard({
   salesList,
   countData,
-  expensesList,
   hourlyList,
-  activeFilter,
 }: {
   salesList: any[];
   countData: any;
-  expensesList?: any[];
   hourlyList: any[];
-  activeFilter?: string;
 }) {
   const { colors, isDark } = useTheme();
   const { Animated: RNAnimated, Easing: RNEasing } = require("react-native");
+  const [chartAreaWidth, setChartAreaWidth] = useState(0);
 
-  // ── Normalize countData: API may return dashBoardCount as an array [{...}] ──
-  const normalizedCount = Array.isArray(countData) ? (countData[0] || {}) : (countData || {});
+  // ── Normalize countData ──
+  const normalizedCount = Array.isArray(countData)
+    ? countData[0] || {}
+    : countData || {};
 
-  // ── Extract total sales from dashBoardSalesList ──
+  // ── Extract totals from salesList ──
   const totalEntry = (salesList || []).find(
     (item: any) => (item.hours || "").trim().toLowerCase() === "total",
   );
   const totalPaidAmt = Number(totalEntry?.paidAmount) || 0;
-  const totalBillCount = Number(totalEntry?.billCount) || Number(normalizedCount?.totalBills) || 0;
+  const totalOrders =
+    Number(totalEntry?.billCount) ||
+    Number(normalizedCount?.totalBills) ||
+    0;
 
-  // ── Calculate expenses: sum from expensessDashBoardList, fallback to dashBoardCount ──
-  const listExpenseSum = (expensesList || []).reduce(
-    (sum: number, item: any) => sum + (Number(item?.expenseAmount) || 0),
-    0,
-  );
-  let expenses = listExpenseSum;
-  if (expenses === 0) {
-    let fallback: any = 0;
-    if (activeFilter === "this_week") {
-      fallback = normalizedCount?.weekExpenses ?? normalizedCount?.todayExpenses ?? 0;
-    } else if (activeFilter === "this_month" || activeFilter === "last_month") {
-      fallback = normalizedCount?.monthExpenses ?? normalizedCount?.todayExpenses ?? 0;
-    } else {
-      fallback = normalizedCount?.todayExpenses ?? 0;
-    }
-    expenses = Number(fallback) || 0;
-  }
-  const profit = totalPaidAmt - expenses;
-
-  // ── Sales amount counter animation ──
+  // ── Animated sales counter ──
   const [animVal, setAnimVal] = useState(0);
   useEffect(() => {
-    if (totalPaidAmt === 0) { setAnimVal(0); return; }
+    if (totalPaidAmt === 0) {
+      setAnimVal(0);
+      return;
+    }
     const anim = new RNAnimated.Value(0);
-    const id = anim.addListener(({ value }: { value: number }) => setAnimVal(Math.round(value)));
-    RNAnimated.timing(anim, { toValue: totalPaidAmt, duration: 950, easing: RNEasing.out(RNEasing.cubic), useNativeDriver: false }).start();
+    const id = anim.addListener(({ value }: { value: number }) =>
+      setAnimVal(Math.round(value)),
+    );
+    RNAnimated.timing(anim, {
+      toValue: totalPaidAmt,
+      duration: 950,
+      easing: RNEasing.out(RNEasing.cubic),
+      useNativeDriver: false,
+    }).start();
     return () => anim.removeListener(id);
   }, [totalPaidAmt]);
 
-  const formattedTotal = totalPaidAmt > 0 && animVal > 0 ? `₹${animVal.toLocaleString()}` : "₹0";
+  const formattedTotal =
+    totalPaidAmt > 0 && animVal > 0 ? `₹${animVal.toLocaleString()}` : "₹0";
 
-  // ── Gauge: clean profit/loss indicator ──
-  let gaugeRatio = 0;
-  let gaugeLabel = "No Sales Yet";
-  let gaugeValueText = "₹0";
-  if (totalPaidAmt > 0) {
-    gaugeRatio = Math.max(0.05, Math.min(Math.abs(profit) / totalPaidAmt, 0.95));
-    if (profit > 0) {
-      gaugeLabel = "Profit";
-      gaugeValueText = `₹${Math.abs(profit).toLocaleString()}`;
-    } else if (profit < 0) {
-      gaugeLabel = "Loss";
-      gaugeValueText = `₹${Math.abs(profit).toLocaleString()}`;
-    } else {
-      gaugeLabel = "Break-even";
-      gaugeValueText = "₹0";
-      gaugeRatio = 0;
-    }
-  }
+  // ── Parse hourly data into chart buckets ──
+  const hourlyBuckets = React.useMemo(() => {
+    const data = hourlyList || [];
+    if (data.length === 0) return [];
 
-  // ── Card press scale ──
-  const [scaleAnim] = useState(new RNAnimated.Value(1));
-  const handlePressIn = () =>
-    RNAnimated.spring(scaleAnim, { toValue: 0.97, useNativeDriver: true }).start();
-  const handlePressOut = () =>
-    RNAnimated.spring(scaleAnim, { toValue: 1, friction: 4, tension: 40, useNativeDriver: true }).start();
+    return data
+      .map((item: any) => {
+        const raw = (item.hours || "").toString().trim();
+        const amount = Number(item.paidAmount) || 0;
+        const orders = Number(item.billCount) || 0;
 
-  // Gauge size
-  const [cardWidth, setCardWidth] = useState(0);
-  const gaugeSize = cardWidth > 0 ? Math.min(cardWidth - wp(40), wp(280)) : wp(260);
-  const strokeW = wp(20);
+        // Parse hour from various formats
+        let hour = -1;
+
+        // "12 PM to 1 PM" or "12PM to 1PM"
+        const rangeMatch = raw.match(
+          /(\d+)\s*(?:PM|AM|pm|am)?\s*(?:to|-|–)\s*(\d+)\s*(PM|AM|pm|am)?/i,
+        );
+        if (rangeMatch) {
+          const h = parseInt(rangeMatch[1], 10);
+          const suffix = (rangeMatch[3] || "").toUpperCase();
+          if (suffix === "PM" && h < 12) hour = h + 12;
+          else if (suffix === "AM" && h === 12) hour = 0;
+          else hour = h;
+        }
+
+        // "14", "14:00", single hour
+        if (hour < 0) {
+          const numMatch = raw.match(/^(\d+)/);
+          if (numMatch) {
+            const num = parseInt(numMatch[1], 10);
+            if (!isNaN(num) && num >= 0 && num <= 24) hour = num;
+          }
+        }
+
+        // "9 AM", "3 PM" etc.
+        if (hour < 0) {
+          const singleMatch = raw.match(/^(\d+)\s*(AM|PM|am|pm)$/i);
+          if (singleMatch) {
+            const h = parseInt(singleMatch[1], 10);
+            const suffix = singleMatch[2].toUpperCase();
+            if (suffix === "PM" && h < 12) hour = h + 12;
+            else if (suffix === "AM" && h === 12) hour = 0;
+            else hour = h;
+          }
+        }
+
+        return { hour, amount, orders, rawLabel: raw };
+      })
+      .filter((b: any) => b.hour >= 0 && b.hour <= 23)
+      .sort((a: any, b: any) => a.hour - b.hour);
+  }, [hourlyList]);
+
+  // ── Format hour label ──
+  const formatHour = (h: number) => {
+    if (h === 0 || h === 24) return "12A";
+    if (h === 12) return "12P";
+    if (h < 12) return `${h}A`;
+    return `${h - 12}P`;
+  };
+
+  // ── Format Y-axis value ──
+  const formatYVal = (v: number) => {
+    if (v >= 100000) return `₹${(v / 100000).toFixed(1)}L`;
+    if (v >= 1000) return `₹${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}K`;
+    return `₹${Math.round(v)}`;
+  };
+
+  // ── Chart dimensions ──
+  const chartH = hp(180);
+  const ySteps = 4;
+  const hasChartData = hourlyBuckets.length > 0;
+  const maxVal = hasChartData
+    ? Math.max(...hourlyBuckets.map((b: any) => b.amount), 1)
+    : 1;
+
+  const yLabels = Array.from(
+    { length: ySteps + 1 },
+    (_, i) => (maxVal / ySteps) * (ySteps - i),
+  );
+
+  // How many X labels to show (skip some if too many bars)
+  const maxXLabels = 8;
+  const skipEvery =
+    hourlyBuckets.length > maxXLabels
+      ? Math.ceil(hourlyBuckets.length / maxXLabels)
+      : 1;
+
+  // Bar sizing from measured width
+  const barGap = chartAreaWidth > 0 ? chartAreaWidth * 0.02 : wp(4);
+  const barW =
+    chartAreaWidth > 0 && hourlyBuckets.length > 0
+      ? (chartAreaWidth - barGap * (hourlyBuckets.length + 1)) /
+        hourlyBuckets.length
+      : 0;
+
+  // ── Find peak bar for highlight ──
+  const peakIdx = hasChartData
+    ? hourlyBuckets.reduce(
+        (best: number, b: any, i: number) =>
+          b.amount > hourlyBuckets[best].amount ? i : best,
+        0,
+      )
+    : -1;
 
   return (
-    <Card style={s.premiumCardOverride}>
-      <Pressable onPressIn={handlePressIn} onPressOut={handlePressOut}>
-        <RNAnimated.View
-          style={[s.premiumCardContent, { transform: [{ scale: scaleAnim }] }]}
-          onLayout={(e: LayoutChangeEvent) => setCardWidth(e.nativeEvent.layout.width)}
-        >
-          {/* ── Header row ── */}
-          <View style={s.gaugeHeaderRow}>
-            <Text style={[s.premiumTitleGauge, { color: colors.textSecondary }]}>
-              Total Sales
-            </Text>
-          </View>
-
-          {/* ── Amount ── */}
-          <Text style={[s.premiumAmount, { color: colors.textPrimary }]}>
+    <Card style={s.hourlySalesCard}>
+      {/* ── Header ── */}
+      <View style={s.hourlyHeaderRow}>
+        <View>
+          <Text
+            style={[s.hourlyTitleLabel, { color: colors.textSecondary }]}
+          >
+            Total Sales
+          </Text>
+          <Text style={[s.hourlyTotalAmount, { color: colors.textPrimary }]}>
             {formattedTotal}
           </Text>
-          <Text style={[s.premiumSubLabel, { color: colors.textTertiary }]}>
-            Total Paid Amount
+        </View>
+        <View
+          style={[
+            s.hourlyOrdersBadge,
+            { backgroundColor: isDark ? colors.primaryLight : colors.primary + "12" },
+          ]}
+        >
+          <Feather name="shopping-bag" size={ms(14)} color={colors.primary} />
+          <Text style={[s.hourlyOrdersText, { color: colors.primary }]}>
+            {totalOrders} {totalOrders === 1 ? "Order" : "Orders"}
           </Text>
+        </View>
+      </View>
 
-          {/* ── Gauge ── */}
-          <View style={s.gaugeSVGWrapper}>
-            {cardWidth > 0 && (
-              <SemiCircularGauge
-                progress={gaugeRatio}
-                size={gaugeSize}
-                strokeWidth={strokeW}
-              />
+      {/* ── Section label ── */}
+      <View style={s.hourlyChartLabelRow}>
+        <View style={[s.hourlyChartDot, { backgroundColor: colors.primary }]} />
+        <Text style={[s.hourlyChartLabelText, { color: colors.textTertiary }]}>
+          Hourly Sales
+        </Text>
+      </View>
+
+      {/* ── Bar Chart ── */}
+      {hasChartData ? (
+        <View style={s.hourlyChartContainer}>
+          {/* Y-axis labels */}
+          <View style={[s.hourlyYAxis, { height: chartH }]}>
+            {yLabels.map((v, i) => (
+              <Text
+                key={i}
+                style={[s.hourlyYLabel, { color: colors.textTertiary }]}
+              >
+                {formatYVal(v)}
+              </Text>
+            ))}
+          </View>
+
+          {/* Chart area */}
+          <View
+            style={{ flex: 1 }}
+            onLayout={(e: LayoutChangeEvent) =>
+              setChartAreaWidth(e.nativeEvent.layout.width)
+            }
+          >
+            {chartAreaWidth > 0 && (
+              <>
+                {/* Grid lines */}
+                <View style={[s.hourlyGridArea, { height: chartH }]}>
+                  {yLabels.map((_, i) => (
+                    <View
+                      key={i}
+                      style={[
+                        s.hourlyGridLine,
+                        { backgroundColor: colors.border },
+                      ]}
+                    />
+                  ))}
+                </View>
+
+                {/* SVG Bars */}
+                <Svg
+                  width={chartAreaWidth}
+                  height={chartH}
+                  style={{ position: "absolute" }}
+                >
+                  <Defs>
+                    <LinearGradient
+                      id="hourlyBarGrad"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <Stop
+                        offset="0"
+                        stopColor={colors.primary}
+                        stopOpacity="1"
+                      />
+                      <Stop
+                        offset="1"
+                        stopColor={colors.primary}
+                        stopOpacity="0.45"
+                      />
+                    </LinearGradient>
+                    <LinearGradient
+                      id="hourlyBarPeak"
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <Stop offset="0" stopColor="#6366F1" stopOpacity="1" />
+                      <Stop offset="1" stopColor="#3B82F6" stopOpacity="0.7" />
+                    </LinearGradient>
+                  </Defs>
+                  {hourlyBuckets.map((b: any, i: number) => {
+                    const barH = Math.max(
+                      (b.amount / maxVal) * (chartH - hp(12)),
+                      wp(2),
+                    );
+                    const x = barGap + i * (barW + barGap);
+                    const y = chartH - barH;
+                    const radius = Math.min(barW / 2, wp(6));
+                    const isPeak = i === peakIdx && b.amount > 0;
+
+                    // Rounded top bar path
+                    const barPath = [
+                      `M ${x} ${chartH}`,
+                      `L ${x} ${y + radius}`,
+                      `Q ${x} ${y}, ${x + radius} ${y}`,
+                      `L ${x + barW - radius} ${y}`,
+                      `Q ${x + barW} ${y}, ${x + barW} ${y + radius}`,
+                      `L ${x + barW} ${chartH}`,
+                      `Z`,
+                    ].join(" ");
+
+                    return (
+                      <Path
+                        key={i}
+                        d={barPath}
+                        fill={
+                          isPeak
+                            ? "url(#hourlyBarPeak)"
+                            : "url(#hourlyBarGrad)"
+                        }
+                        opacity={isPeak ? 1 : 0.75}
+                      />
+                    );
+                  })}
+                </Svg>
+
+                {/* X-axis labels */}
+                <View style={s.hourlyXAxis}>
+                  {hourlyBuckets.map((b: any, i: number) => {
+                    const showLabel =
+                      hourlyBuckets.length <= maxXLabels ||
+                      i % skipEvery === 0 ||
+                      i === hourlyBuckets.length - 1;
+                    return (
+                      <View
+                        key={i}
+                        style={{
+                          width: barW + barGap,
+                          alignItems: "center",
+                          justifyContent: "flex-start",
+                          paddingTop: hp(4),
+                        }}
+                      >
+                        {showLabel ? (
+                          <Text
+                            style={[
+                              s.hourlyXLabel,
+                              { color: colors.textTertiary },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {formatHour(b.hour)}
+                          </Text>
+                        ) : null}
+                      </View>
+                    );
+                  })}
+                </View>
+              </>
             )}
           </View>
-
-          {/* ── Clean label below gauge ── */}
-          <View style={s.gaugeBottomRow}>
-            <Text style={[s.gaugePctText, { color: profit > 0 ? "#10B981" : profit < 0 ? "#EF4444" : colors.textTertiary }]}>
-              {gaugeValueText}
-            </Text>
-            <Text style={[s.gaugeAchievedText, { color: colors.textSecondary }]}>
-              {gaugeLabel}
-            </Text>
-          </View>
-        </RNAnimated.View>
-      </Pressable>
+        </View>
+      ) : (
+        <View style={s.hourlyEmptyState}>
+          <Feather
+            name="bar-chart-2"
+            size={ms(36)}
+            color={colors.textTertiary}
+            style={{ marginBottom: hp(10), opacity: 0.35 }}
+          />
+          <Text
+            style={[s.hourlyEmptyText, { color: colors.textSecondary }]}
+          >
+            No hourly data available
+          </Text>
+        </View>
+      )}
     </Card>
   );
 }
@@ -1256,13 +1409,14 @@ function SalesChartSection({
     s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 
   // ── Order Types data (for the "orderTypes" tab) ──
-  // Filter: exclude "Total" row and any entries with null/empty hours
+  // Filter: exclude "Total" row, cancelled/complimentary bills, and any entries with null/empty hours
+  const EXCLUDED_ORDER_TYPES = ['total', 'cancel bills', 'cancelled', 'compliment bills', 'complimentary bills', 'complimentary'];
   const otFilteredData = React.useMemo(() => {
     const raw = salesData || [];
     const filtered = raw.filter((item: any) => {
       const hours = (item.hours || '').trim();
       if (!hours) return false; // exclude null/empty
-      if (hours.toLowerCase() === 'total') return false; // exclude total row
+      if (EXCLUDED_ORDER_TYPES.includes(hours.toLowerCase())) return false;
       return true;
     });
     console.log("[OrderTypes] Filtered order types:", filtered.length, "from", raw.length, "total entries");
@@ -1301,7 +1455,9 @@ function SalesChartSection({
     period === "sales"
       ? rawData.filter((d: any) => {
           const h = (d.hours || "").trim();
-          return h && h.toLowerCase() !== "total";
+          if (!h) return false;
+          if (EXCLUDED_ORDER_TYPES.includes(h.toLowerCase())) return false;
+          return true;
         })
       : rawData;
   const hasData = isChartPeriod ? activeData.length > 0 : otFilteredData.length > 0;
@@ -2228,16 +2384,6 @@ function RevenueLeakage({ data }: { data: any }) {
 
   const leakageData = [
     {
-      label: "Cancelled Bills",
-      value: data.cancelBills || 0,
-      icon: "close-circle-outline",
-    },
-    {
-      label: "Compliment Bills",
-      value: data.complimentaryBills || data.complimentBills || 0,
-      icon: "gift-outline",
-    },
-    {
       label: "Reprint Bills",
       value: data.reprintBills || data.rePrintBills || 0,
       icon: "printer-outline",
@@ -2572,70 +2718,95 @@ function ItemRankingSection({
 
 // ─── Styles ─────────────────────────────────────────────────
 const s = StyleSheet.create({
-  // Premium Total Sales Gauge Card
-  premiumCardOverride: {
+  // Hourly Sales Bar Chart Card
+  hourlySalesCard: {
     padding: wp(16),
   },
-  premiumCardContent: {
+  hourlyHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: hp(16),
+  },
+  hourlyTitleLabel: {
+    fontSize: ms(13),
+    fontWeight: "600",
+    marginBottom: hp(4),
+    letterSpacing: 0.2,
+  },
+  hourlyTotalAmount: {
+    fontSize: ms(32),
+    fontWeight: "800",
+    letterSpacing: -0.8,
+  },
+  hourlyOrdersBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: wp(12),
+    paddingVertical: hp(6),
+    borderRadius: wp(20),
+    gap: wp(6),
+    marginTop: hp(4),
+  },
+  hourlyOrdersText: {
+    fontSize: ms(13),
+    fontWeight: "700",
+  },
+  hourlyChartLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: wp(6),
+    marginBottom: hp(12),
+  },
+  hourlyChartDot: {
+    width: wp(8),
+    height: wp(8),
+    borderRadius: wp(4),
+  },
+  hourlyChartLabelText: {
+    fontSize: ms(12),
+    fontWeight: "600",
+  },
+  hourlyChartContainer: {
+    flexDirection: "row",
+    marginBottom: hp(4),
+  },
+  hourlyYAxis: {
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    marginRight: wp(8),
+    paddingBottom: hp(28),
+  },
+  hourlyYLabel: {
+    fontSize: ms(9),
+    fontWeight: "600",
+  },
+  hourlyGridArea: {
+    justifyContent: "space-between",
+  },
+  hourlyGridLine: {
+    height: StyleSheet.hairlineWidth,
+    opacity: 0.25,
+  },
+  hourlyXAxis: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    marginTop: hp(6),
+  },
+  hourlyXLabel: {
+    fontSize: ms(9),
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  hourlyEmptyState: {
+    paddingVertical: hp(36),
     alignItems: "center",
     justifyContent: "center",
   },
-  gaugeHeaderRow: {
-    width: "100%",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: hp(12),
-  },
-  premiumTitleGauge: {
-    fontSize: ms(16),
-    fontWeight: "700",
-    letterSpacing: 0.1,
-  },
-  gaugeBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: wp(10),
-    paddingVertical: hp(5),
-    borderRadius: wp(20),
-    gap: wp(4),
-  },
-  gaugeBadgeText: {
-    fontSize: ms(12),
-    fontWeight: "700",
-  },
-  premiumAmount: {
-    fontSize: ms(38),
-    fontWeight: "800",
-    letterSpacing: -1.2,
-    alignSelf: "flex-start",
-  },
-  premiumSubLabel: {
-    fontSize: ms(13),
-    fontWeight: "500",
-    alignSelf: "flex-start",
-    marginBottom: hp(8),
-  },
-  gaugeSVGWrapper: {
-    alignItems: "center",
-    width: "100%",
-    marginTop: hp(4),
-    marginBottom: hp(-8),
-  },
-  gaugeBottomRow: {
-    alignItems: "center",
-    marginBottom: hp(4),
-    marginTop: hp(4),
-  },
-  gaugePctText: {
-    fontSize: ms(32),
-    fontWeight: "800",
-    letterSpacing: -0.5,
-  },
-  gaugeAchievedText: {
+  hourlyEmptyText: {
     fontSize: ms(14),
-    fontWeight: "600",
-    marginTop: hp(2),
+    fontWeight: "500",
+    textAlign: "center",
   },
 
   // Header
@@ -2754,7 +2925,7 @@ const s = StyleSheet.create({
     flexWrap: "wrap",
     justifyContent: "space-between",
     gap: wp(16),
-    marginTop: hp(8),
+    marginTop: hp(24),
     marginBottom: hp(4),
   },
   kpiCardWidth: {
