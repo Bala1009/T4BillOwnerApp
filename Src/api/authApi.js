@@ -4,15 +4,29 @@ import { AUTH_TOKEN_KEY, USERNAME_KEY, PASSWORD_KEY } from "../constants/storage
 
 const BASE_URL = "https://api.touch4bill.com";
 
-export const loginUser = async (userName, passWord, deviceID = "device123") => {
+export const loginUser = async (userName, passWord, deviceID = "device123", pushToken = null, platform = "android") => {
   try {
-    console.log("[Login] Request:", { userName, deviceID });
+    // OLD REQUEST BODY
+    // {
+    //   userName,
+    //   passWord,
+    //   deviceID,
+    // }
 
-    const response = await axios.post(`${BASE_URL}/V2.0/Login/GetLogin`, {
+    const requestBody = {
       userName,
       passWord,
       deviceID,
-    });
+      pushToken: pushToken,
+      platform: platform,
+    };
+
+    console.log("[Login] Request URL:", `${BASE_URL}/V2.0/Login/GetLogin`);
+    console.log("[Login] Push Token:", pushToken);
+    console.log("[Login] Platform:", platform);
+    console.log("[Login] Request Body:", JSON.stringify(requestBody));
+
+    const response = await axios.post(`${BASE_URL}/V2.0/Login/GetLogin`, requestBody);
 
     // ── Log response details ─────────────────────────────────
     console.log("[Login] HTTP Status:", response.status);

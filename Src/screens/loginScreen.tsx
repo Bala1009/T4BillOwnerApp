@@ -30,12 +30,14 @@ import Animated, {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { loginUser } from "../api/authApi";
 import { useAuth } from "../context/AuthContext";
+import { useNotifications } from "../hooks/useNotifications";
 import { hp, ms, useTheme, wp } from "../theme";
 
 export default function LoginScreen() {
   const navigation = useNavigation<any>();
   const { colors, isDark } = useTheme();
   const { setAuthData } = useAuth();
+  const { expoPushToken } = useNotifications() as { expoPushToken: string | null };
 
   const [userName, setUserName] = useState("");
   const [password, setPassword] = useState("");
@@ -111,7 +113,7 @@ export default function LoginScreen() {
 
       try {
         // loginUser validates isSuccess and throws on failure
-        const data = await loginUser(userName, password, "device123");
+        const data = await loginUser(userName, password, "device123", expoPushToken, "android");
 
         // ── Parse result string for ClientID ─────────────────────
         const result = data?.result || "";

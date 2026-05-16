@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "171707952017",
+    "project_id": "t4billownerapp",
+    "storage_bucket": "t4billownerapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:171707952017:android:0665ba53e9e7989a634830",
+        "android_client_info": {
+          "package_name": "com.t4bill.ownerapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC0sZLw59I_jPhGmSVd0YpqvfLvDN5kpfw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

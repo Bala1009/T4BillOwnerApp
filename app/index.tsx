@@ -13,6 +13,7 @@ import { ThemeProvider } from "../Src/theme";
 import { AuthProvider } from "../Src/context/AuthContext";
 import { DateFilterProvider } from "../Src/context/DateFilterContext";
 import { DashboardProvider } from "../Src/context/DashboardContext";
+import { NotificationProvider } from "../Src/context/NotificationContext";
 
 export default function Index() {
   const [fontsLoaded] = useFonts({
@@ -35,11 +36,13 @@ export default function Index() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <DateFilterProvider>
-          <DashboardProvider>
-            <AppNavigator />
-          </DashboardProvider>
-        </DateFilterProvider>
+        <NotificationProvider>
+          <DateFilterProvider>
+            <DashboardProvider>
+              <AppNavigator />
+            </DashboardProvider>
+          </DateFilterProvider>
+        </NotificationProvider>
       </AuthProvider>
     </ThemeProvider>
   );
