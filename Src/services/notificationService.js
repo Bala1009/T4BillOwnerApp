@@ -42,20 +42,23 @@ import { Platform } from 'react-native';
  * Must be called once, as early as possible (e.g. in NotificationProvider).
  *
  * @param {Object} options - Optional overrides for the default behaviour.
- * @param {boolean} options.shouldShowAlert  - Show an in-app banner (default: true)
- * @param {boolean} options.shouldPlaySound  - Play the notification sound  (default: true)
- * @param {boolean} options.shouldSetBadge   - Update the app badge count   (default: false)
+ * @param {boolean} options.shouldShowBanner  - Show an in-app heads-up banner (default: true)
+ * @param {boolean} options.shouldShowList    - Show in the notification tray/list (default: true)
+ * @param {boolean} options.shouldPlaySound   - Play the notification sound  (default: true)
+ * @param {boolean} options.shouldSetBadge    - Update the app badge count   (default: false)
  */
 export function configureForegroundNotifications(options = {}) {
   const {
-    shouldShowAlert = true,
+    shouldShowBanner = true,
+    shouldShowList = true,
     shouldPlaySound = true,
     shouldSetBadge = false,
   } = options;
 
   Notifications.setNotificationHandler({
     handleNotification: async () => ({
-      shouldShowAlert,
+      shouldShowBanner,
+      shouldShowList,
       shouldPlaySound,
       shouldSetBadge,
     }),
